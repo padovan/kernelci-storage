@@ -1,0 +1,27 @@
+[package]
+name = "kernelci-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7.9", features = ["tracing", "multipart", "macros"] }
+azure_blob_uploader = "0.1.4"
+azure_storage = "0.21.0"
+azure_storage_blobs = "0.21.0"
+chksum-hash-sha2-512 = "0.0.1"
+futures = "0.3.31"
+futures-util = "0.3.31"
+headers = "0.4.0"
+hex = "0.4.3"
+http-body-util = "0.1.2"
+rand = "0.8.5"
+reqwest = { version = "0.12.9", features = ["blocking"] }
+serde = { version = "1.0.216", features = ["derive"] }
+tempfile = "3.14.0"
+tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread", "macros"] }
+tokio-util = "0.7.13"
+toml = "0.8.19"
+tower = "0.5.2"
+tower-http = { version = "0.6.2", features = ["trace", "fs", "limit"] }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
