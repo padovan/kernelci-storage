@@ -1,3 +1,15 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2024 Collabora, Ltd.
+// Author: Denys Fedoryshchenko <denys.f@collabora.com>
+/*
+   KernelCI Storage Server
+
+   This is a simple storage server that supports file upload and download, with token based authentication.
+   It supports multiple backends, currently only Azure Blob is supported, to provide user transparent storage.
+   It caches the files in a local directory and serves them from there.
+   Range requests are supported, but only for start offset, end limit is not implemented yet.
+*/
+
 mod azure;
 
 use axum::{
@@ -38,6 +50,7 @@ fn init_driver(driver_type: &str) -> Box<dyn Driver> {
     return driver;
 }
 
+/// Initial variables configuration and checks
 fn initial_setup() {
     let cache_dir = "cache";
     let download_dir = "download";
@@ -60,12 +73,17 @@ async fn main() {
 
     initial_setup();
 
+    // Supported endpoints:
+    // GET / - root
+    // GET /v1/checkauth - check if the token is correct
+    // POST /v1/file and /upload - upload file
+    // GET /*filepath - get file
     let app = Router::new()
         .layer(DefaultBodyLimit::max(1024 * 1024 * 4096))
         .route("/", get(root))
-        .route("/v1/checkauth", get(check_auth))
-        .route("/v1/file", post(post_file))
-        .route("/upload", post(post_file))
+        .route("/v1/checkauth", get(ax_check_auth))
+        .route("/v1/file", post(ax_post_file))
+        .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -76,43 +94,106 @@ async fn root() -> &'static str {
     "KernelCI Storage Server"
 }
 
-fn driver_get_file(filepath: String) -> ReceivedFile {
-    let driver_name = "azure";
-    let driver = init_driver(driver_name);
-    return driver.get_file(filepath);
-}
+/// Check if the Authorization header is present and if the token is correct    
+/// Test it by: curl -X GET http://localhost:3000/v1/checkauth -H "Authorization: Bearer SuperSecretToken"
+async fn ax_check_auth(headers: HeaderMap) -> (StatusCode, &'static str) {
+    let message = verify_auth_hdr(&headers);
 
-fn write_file_driver(filename: String, data: Vec<u8>) -> &'static str {
-    let driver_name = "azure";
-    let driver = init_driver(driver_name);
-    driver.write_file(filename, data);
-    return "";
-}
-
-// We support limited range only for now
-fn parse_range(range: &str) -> (u64, u64) {
-    let parts: Vec<&str> = range.split("=").collect();
-    let range_parts: Vec<&str> = parts[1].split("-").collect();
-    let start = range_parts[0].parse::<u64>().unwrap();
-    if range_parts.len() == 1 {
-        return (start, 0);
-    }
-    let end = range_parts[1].parse::<u64>();
-    match end {
-        Ok(end) => return (start, end),
-        Err(_) => return (start, 0),
+    if message == "" {
+        (StatusCode::OK, "Authorized")
+    } else {
+        (StatusCode::UNAUTHORIZED, message)
     }
 }
 
 /*
-    Retrieve file in the server
+    Upload file from user to remote storage
+    TBD: Store file in cache as well?
+
+    curl -X POST http://localhost:3000/v1/file -H "Authorization Bearer SuperSecretToken" -F "filename=@test.bin"
+
+    This function will check if the Authorization header is present and if the token is correct
+    If the token is correct, it will write the content of the file to the server
+*/
+async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCode, Vec<u8>) {
+    // call check_auth
+    let message = verify_auth_hdr(&headers);
+    // return status and message
+    if message != "" {
+        return (StatusCode::UNAUTHORIZED, Vec::new());
+    }
+    println!("Authorized");
+
+    /* 100-continue Expect is broken, quite hard to fix in axum */
+    /*
+    if let Some(expect) = headers.get("Expect") {
+        println!("Expect: {:?}", expect);
+        if expect == "100-continue" {
+            println!("Expect 100-continue");
+            return (StatusCode::CONTINUE, Vec::new());
+        }
+    }
+    */
+
+    println!("Uploading file");
+    let mut path: String = "".to_string();
+    let mut file0: Vec<u8> = Vec::new();
+    let mut file0_filename: String = "".to_string();
+
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap().to_string();
+        //let filename = field.file_name();
+        let filename = field.file_name().map(|f| f.to_string()); // Map filename to avoid borrowing later, how this black magic works?!?!?!
+        let data = field.bytes().await;
+
+        match data {
+            Ok(data) => {
+                println!("Length of `{}` is {} bytes", name, data.len());
+                if name == "path" {
+                    path = String::from_utf8(data.to_vec()).unwrap();
+                    println!("Path: {}", path);
+                } else if name == "file0" {
+                    file0 = data.to_vec();
+                    match filename {
+                        Some(filename) => file0_filename = filename.to_string(),
+                        None => todo!(),
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading file: {:?}", e);
+                break;
+            }
+        }
+    }
+    println!(
+        "File: {} bytes filename: {} path: {}",
+        file0.len(),
+        file0_filename,
+        path
+    );
+    let full_path = format!("{}/{}", path, file0_filename);
+    let message = write_file_driver(full_path, file0);
+    if message != "" {
+        return (StatusCode::CONFLICT, Vec::new());
+    }
+    (StatusCode::OK, Vec::new())
+}
+
+/*
+    Retrieve file in the server from the cache/storage and return it to the client
+
     curl -X GET http://localhost:3000/v1/file/test.bin -H "Authorization: Bearer SuperSecretToken"
 
     This function will check if the Authorization header is present and if the token is correct
     If the token is correct, it will return the content of the file u8
 
 */
-async fn ax_get_file(Path(filepath): Path<String>, rxheaders: HeaderMap, method: Method) -> impl IntoResponse {
+async fn ax_get_file(
+    Path(filepath): Path<String>,
+    rxheaders: HeaderMap,
+    method: Method,
+) -> impl IntoResponse {
     let received_file = driver_get_file(filepath.clone());
     if !received_file.valid {
         return (StatusCode::NOT_FOUND, format!("Not Found: {}", filepath)).into_response();
@@ -153,9 +234,7 @@ async fn ax_get_file(Path(filepath): Path<String>, rxheaders: HeaderMap, method:
                 file.seek(std::io::SeekFrom::Start(start)).await.unwrap();
                 headers.insert(
                     header::CONTENT_RANGE,
-                    format!("bytes {}-", start)
-                        .parse()
-                        .unwrap(),
+                    format!("bytes {}-", start).parse().unwrap(),
                 );
                 if end == 0 || end >= metadata.len() {
                     end = metadata.len();
@@ -168,17 +247,12 @@ async fn ax_get_file(Path(filepath): Path<String>, rxheaders: HeaderMap, method:
                 );
                 headers.insert(
                     header::CONTENT_LENGTH,
-                    format!("{}", end - start)
-                        .parse()
-                        .unwrap(),
+                    format!("{}", end - start).parse().unwrap(),
                 );
-                
             } else {
                 headers.insert(
                     header::CONTENT_LENGTH,
-                    format!("{}", metadata.len())
-                        .parse()
-                        .unwrap(),
+                    format!("{}", metadata.len()).parse().unwrap(),
                 );
             }
             // If end... who cares about end :-D
@@ -200,75 +274,36 @@ async fn ax_get_file(Path(filepath): Path<String>, rxheaders: HeaderMap, method:
     };
 }
 
-/*
-    Post file to the server
-    curl -X POST http://localhost:3000/v1/file -H "Authorization Bearer SuperSecretToken" -F "filename=@test.bin"
-
-    This function will check if the Authorization header is present and if the token is correct
-    If the token is correct, it will write the content of the file to the server
-*/
-async fn post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCode, Vec<u8>) {
-    // call check_auth
-    let message = verify_auth_hdr(&headers);
-    // return status and message
-    if message != "" {
-        return (StatusCode::UNAUTHORIZED, Vec::new());
-    }
-    println!("Authorized");
-    
-    /* 100-continue Expect is broken, quite hard to fix in axum */
-    /*
-    if let Some(expect) = headers.get("Expect") {
-        println!("Expect: {:?}", expect);
-        if expect == "100-continue" {
-            println!("Expect 100-continue");
-            return (StatusCode::CONTINUE, Vec::new());
-        }
-    }
-    */
-
-    println!("Uploading file");
-    let mut path : String = "".to_string();
-    let mut file0 : Vec<u8> = Vec::new();
-    let mut file0_filename : String = "".to_string();
-
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap().to_string();
-        //let filename = field.file_name();
-        let filename = field.file_name().map(|f| f.to_string()); // Map filename to avoid borrowing later, how this black magic works?!?!?!
-        let data = field.bytes().await;
-
-        match data {
-            Ok(data) => {
-                println!("Length of `{}` is {} bytes", name, data.len());
-                if name == "path" {
-                    path = String::from_utf8(data.to_vec()).unwrap();
-                    println!("Path: {}", path);
-                } else if name == "file0" {
-                    file0 = data.to_vec();
-                    match filename {
-                        Some(filename) => file0_filename = filename.to_string(),
-                        None => todo!(),
-                    }
-                    
-                }
-            }
-            Err(e) => {
-                eprintln!("Error reading file: {:?}", e);
-                break;
-            }
-        }
-    }
-    println!("File: {} bytes filename: {} path: {}", file0.len(), file0_filename, path);
-    let full_path = format!("{}/{}", path, file0_filename);
-    let message = write_file_driver(full_path, file0);
-    if message != "" {
-        return (StatusCode::CONFLICT, Vec::new());
-    }
-    (StatusCode::OK, Vec::new())
+fn driver_get_file(filepath: String) -> ReceivedFile {
+    let driver_name = "azure";
+    let driver = init_driver(driver_name);
+    return driver.get_file(filepath);
 }
 
+fn write_file_driver(filename: String, data: Vec<u8>) -> &'static str {
+    let driver_name = "azure";
+    let driver = init_driver(driver_name);
+    driver.write_file(filename, data);
+    return "";
+}
 
+/// Parse range header
+/// We support limited range only for now
+fn parse_range(range: &str) -> (u64, u64) {
+    let parts: Vec<&str> = range.split("=").collect();
+    let range_parts: Vec<&str> = parts[1].split("-").collect();
+    let start = range_parts[0].parse::<u64>().unwrap();
+    if range_parts.len() == 1 {
+        return (start, 0);
+    }
+    let end = range_parts[1].parse::<u64>();
+    match end {
+        Ok(end) => return (start, end),
+        Err(_) => return (start, 0),
+    }
+}
+
+/// Verify the Authorization header
 fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
     let auth = headers.get("Authorization");
     match auth {
@@ -290,18 +325,5 @@ fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
         return "Invalid Token";
     } else {
         return "";
-    }
-}
-
-/*
-    Test it by: curl -X GET http://localhost:3000/v1/checkauth -H "Authorization: Bearer SuperSecretToken"
-*/
-async fn check_auth(headers: HeaderMap) -> (StatusCode, &'static str) {
-    let message = verify_auth_hdr(&headers);
-
-    if message == "" {
-        (StatusCode::OK, "Authorized")
-    } else {
-        (StatusCode::UNAUTHORIZED, message)
     }
 }

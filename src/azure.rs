@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2024 Collabora, Ltd.
+// Author: Denys Fedoryshchenko <denys.f@collabora.com>
+
 pub struct AzureDriver;
 
 impl AzureDriver {
@@ -18,10 +22,9 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 use tempfile::Builder;
-// toml crate
-//use toml::Value;
-use toml::Table;
 use serde::Deserialize;
+use toml::Table;
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 struct AzureConfig {
@@ -31,8 +34,8 @@ struct AzureConfig {
     sastoken: String,
 }
 
+/// Get Azure credentials from config.toml
 fn get_azure_credentials(name: &str) -> AzureConfig {
-    // section azure
     let cfg_content = std::fs::read_to_string("config.toml").unwrap();
     let cfg: Table = toml::from_str(&cfg_content).unwrap();
     let azure_cfg = cfg.get(name).unwrap();
@@ -49,11 +52,11 @@ fn get_azure_credentials(name: &str) -> AzureConfig {
     };
 }
 
-use std::sync::Arc;
-
+/// Write file to Azure blob storage
+/// TBD: Rework, do not keep whole file as Vec<u8> in memory!!!
 async fn write_file_to_blob(filename: String, data: Vec<u8>) -> &'static str {
     let azure_cfg = Arc::new(get_azure_credentials("azure"));
-    
+
     let storage_account = azure_cfg.account.as_str();
     let storage_key = azure_cfg.key.clone();
     let storage_container = azure_cfg.container.as_str();
@@ -129,6 +132,7 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>) -> &'static str {
 
 use std::fs::read_to_string;
 
+/// Get headers from file (Maybe should be moved to a separate module, its not Azure specific)
 fn get_headers_from_file(filename: String) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let file_content = read_to_string(filename).unwrap();
@@ -144,12 +148,14 @@ fn get_headers_from_file(filename: String) -> HeaderMap {
     return headers;
 }
 
+/// Save headers(Azure) to file
 fn save_headers_to_file(filename: String, headers: HeaderMap) {
     let f = File::create(&filename);
     match f {
         Ok(mut f) => {
             for (key, value) in headers.iter() {
                 let line = format!("{}:{}\n", key, value.to_str().unwrap());
+                // TBD: Filter out some names?
                 f.write_all(line.as_bytes()).unwrap();
             }
         }
@@ -159,7 +165,7 @@ fn save_headers_to_file(filename: String, headers: HeaderMap) {
     }
 }
 
-
+/// Get file from Azure blob storage
 async fn get_file_from_blob(filename: String) -> ReceivedFile {
     let azure_cfg = Arc::new(get_azure_credentials("azure"));
     println!("get_file_from_blob {}", filename);
@@ -238,6 +244,7 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
     return received_file;
 }
 
+/// Implement Driver trait for AzureDriver
 impl super::Driver for AzureDriver {
     fn write_file(&self, filename: String, data: Vec<u8>) -> &str {
         /* Call async write_file_to_blob use tokio::task::block_in_place */
