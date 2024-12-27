@@ -26,6 +26,8 @@ use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
 use clap::Parser;
 use toml::Table;
+use std::{path::PathBuf, net::SocketAddr};
+use axum_server::tls_rustls::RustlsConfig;
 
 const TOKEN: &str = "SuperSecretToken";
 
@@ -34,6 +36,9 @@ const TOKEN: &str = "SuperSecretToken";
 struct Args {
     #[clap(short, long, default_value = "./", help = "Directory to store files")]
     files_directory: String,
+
+    #[clap(short, long, default_value = "./ssl", help = "Directory with cert.pem and key.pem")]
+    ssl_directory: String,
 
     #[clap(short, long, default_value = "./config.toml", help = "Config file, relative to files_directory")]
     config_file: String,
@@ -64,7 +69,7 @@ fn init_driver(driver_type: &str) -> Box<dyn Driver> {
 }
 
 /// Initial variables configuration and checks
-fn initial_setup() {
+async fn initial_setup() -> Option<RustlsConfig> {
     let cache_dir = "cache";
     let download_dir = "download";
     let args = Args::parse();
@@ -84,14 +89,33 @@ fn initial_setup() {
         eprintln!("Config file {} does not exist", &args.config_file);
         std::process::exit(1);
     }
+
+    let config = RustlsConfig::from_pem_file(
+        PathBuf::from(&args.ssl_directory)
+            .join("cert.pem"),
+        PathBuf::from(&args.ssl_directory)
+            .join("key.pem"),
+    )
+    .await;
+    match config {
+        Ok(tlsconf) => {
+            println!("TLS config loaded");
+            Some(tlsconf)
+        }
+        Err(e) => {
+            eprintln!("Error reading TLS config: {:?}", e);
+            None
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-
-    initial_setup();
-
+    let tlscfg = initial_setup().await;
+    let port = 3000;
+    println!("Starting server, tls: {:?}", tlscfg);
+    
     // Supported endpoints:
     // GET / - root
     // GET /v1/checkauth - check if the token is correct
@@ -105,8 +129,16 @@ async fn main() {
         .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    if let Some(tlscfg) = tlscfg {
+        let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        let listener = axum_server::bind_rustls(addr, tlscfg)
+            .serve(app.into_make_service())
+            .await
+            .unwrap();
+    } else {
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    }
 }
 
 async fn root() -> &'static str {

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = { version = "0.7.9", features = ["tracing", "multipart", "macros"] }
+axum-server = { version = "0.7.1", features = ["rustls", "rustls-pemfile", "tls-rustls"] }
 azure_blob_uploader = "0.1.4"
 azure_storage = "0.21.0"
 azure_storage_blobs = "0.21.0"
@@ -19,6 +20,7 @@ http-body-util = "0.1.2"
 jwt = "0.16.0"
 rand = "0.8.5"
 reqwest = { version = "0.12.9", features = ["blocking"] }
+rustls = "0.23.20"
 serde = { version = "1.0.216", features = ["derive"] }
 sha2 = "0.10.8"
 tempfile = "3.14.0"
