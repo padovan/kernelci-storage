@@ -10,7 +10,7 @@ impl AzureDriver {
     }
 }
 
-use crate::ReceivedFile;
+use crate::{ReceivedFile, Args};
 use axum::http::{HeaderName, HeaderValue};
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder};
@@ -25,6 +25,8 @@ use tempfile::Builder;
 use serde::Deserialize;
 use toml::Table;
 use std::sync::Arc;
+use clap::Parser;
+
 
 #[derive(Deserialize)]
 struct AzureConfig {
@@ -36,7 +38,9 @@ struct AzureConfig {
 
 /// Get Azure credentials from config.toml
 fn get_azure_credentials(name: &str) -> AzureConfig {
-    let cfg_content = std::fs::read_to_string("config.toml").unwrap();
+    let args = Args::parse();
+    let cfg_file = args.config_file;
+    let cfg_content = std::fs::read_to_string(cfg_file).unwrap();
     let cfg: Table = toml::from_str(&cfg_content).unwrap();
     let azure_cfg = cfg.get(name).unwrap();
     let account = azure_cfg.get("account").unwrap().as_str().unwrap();

@@ -11,6 +11,7 @@
 */
 
 mod azure;
+mod storjwt;
 
 use axum::{
     body::Body,
@@ -23,8 +24,20 @@ use axum::{
 use headers::HeaderMap;
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
+use clap::Parser;
+use toml::Table;
 
 const TOKEN: &str = "SuperSecretToken";
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[clap(short, long, default_value = "./", help = "Directory to store files")]
+    files_directory: String,
+
+    #[clap(short, long, default_value = "./config.toml", help = "Config file, relative to files_directory")]
+    config_file: String,
+}
 
 struct ReceivedFile {
     original_filename: String,
@@ -54,15 +67,21 @@ fn init_driver(driver_type: &str) -> Box<dyn Driver> {
 fn initial_setup() {
     let cache_dir = "cache";
     let download_dir = "download";
-    let config_file = "config.toml";
+    let args = Args::parse();
+
+    if let Err(e) = std::env::set_current_dir(&args.files_directory) {
+        eprintln!("Error changing directory: {}", e);
+        std::process::exit(1);
+    }
+
     if !std::path::Path::new(cache_dir).exists() {
         std::fs::create_dir(cache_dir).unwrap();
     }
     if !std::path::Path::new(download_dir).exists() {
         std::fs::create_dir(download_dir).unwrap();
     }
-    if !std::path::Path::new(config_file).exists() {
-        eprintln!("Config file {} does not exist", config_file);
+    if !std::path::Path::new(&args.config_file).exists() {
+        eprintln!("Config file {} does not exist", &args.config_file);
         std::process::exit(1);
     }
 }
@@ -303,6 +322,8 @@ fn parse_range(range: &str) -> (u64, u64) {
     }
 }
 
+
+
 /// Verify the Authorization header
 fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
     let auth = headers.get("Authorization");
@@ -313,12 +334,29 @@ fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
     let token = auth.unwrap().to_str().unwrap().split_whitespace();
     let token_parts: Vec<&str> = token.collect();
     if token_parts.len() != 2 {
+        let verif_result = storjwt::verify_jwt_token(token_parts[0]);
+        match verif_result {
+            Ok(_) => return "",
+            Err(_) => {
+                println!("Error verifying token");
+                return "Invalid Token"
+            }
+        }
+
         // We have auth without "Bearer" prefix
         // This is what KernelCI uses :(, so we need to support it
         if token_parts.len() == 1 && token_parts[0] == TOKEN {
             return "";
         } else {
             return "Invalid Token or format";
+        }
+    }
+    let verif_result = storjwt::verify_jwt_token(token_parts[1]);
+    match verif_result {
+        Ok(_) => return "",
+        Err(_) => {
+            println!("Error verifying bearer token");
+            return "Invalid Token";
         }
     }
     if token_parts[1] != TOKEN {
