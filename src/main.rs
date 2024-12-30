@@ -27,9 +27,6 @@ use headers::HeaderMap;
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
-use toml::Table;
-
-const TOKEN: &str = "SuperSecretToken";
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -139,7 +136,7 @@ async fn main() {
 
     if let Some(tlscfg) = tlscfg {
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
-        let listener = axum_server::bind_rustls(addr, tlscfg)
+        axum_server::bind_rustls(addr, tlscfg)
             .serve(app.into_make_service())
             .await
             .unwrap();
@@ -392,14 +389,6 @@ fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
                 return "Invalid Token";
             }
         }
-
-        // We have auth without "Bearer" prefix
-        // This is what KernelCI uses :(, so we need to support it
-        if token_parts.len() == 1 && token_parts[0] == TOKEN {
-            return "";
-        } else {
-            return "Invalid Token or format";
-        }
     }
     let verif_result = storjwt::verify_jwt_token(token_parts[1]);
     match verif_result {
@@ -408,10 +397,5 @@ fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
             println!("Error verifying bearer token");
             return "Invalid Token";
         }
-    }
-    if token_parts[1] != TOKEN {
-        return "Invalid Token";
-    } else {
-        return "";
     }
 }

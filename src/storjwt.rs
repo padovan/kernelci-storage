@@ -1,4 +1,4 @@
-use crate::{Args, ReceivedFile};
+use crate::{Args};
 use clap::Parser;
 use hmac::{Hmac, Mac};
 use jwt::{Header, Token, VerifyWithKey};
@@ -22,7 +22,7 @@ pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt
             return Err(e);
         }
     };
-    let header = token.header();
+    //let header = token.header();
     let claims = token.claims();
     let email = claims.get("email");
     match email {
