@@ -1,11 +1,10 @@
+use crate::{Args, ReceivedFile};
+use clap::Parser;
 use hmac::{Hmac, Mac};
-use jwt::{VerifyWithKey, Header, Token};
+use jwt::{Header, Token, VerifyWithKey};
 use sha2::Sha256;
 use std::collections::BTreeMap;
-use crate::{ReceivedFile, Args};
 use toml::value::Table;
-use clap::Parser;
-
 
 pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt::Error> {
     // config.toml, jwt_secret parameter
@@ -29,7 +28,7 @@ pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt
     match email {
         Some(email) => {
             println!("email: {}", email);
-        },
+        }
         None => {
             println!("email not found");
             return Err(jwt::Error::InvalidSignature);

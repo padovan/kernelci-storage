@@ -10,23 +10,22 @@ impl AzureDriver {
     }
 }
 
-use crate::{ReceivedFile, Args};
+use crate::{Args, ReceivedFile};
 use axum::http::{HeaderName, HeaderValue};
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder};
 use chksum_hash_sha2_512 as sha2_512;
+use clap::Parser;
 use headers::HeaderMap;
 use hex;
 use reqwest::Client;
+use serde::Deserialize;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
-use tempfile::Builder;
-use serde::Deserialize;
-use toml::Table;
 use std::sync::Arc;
-use clap::Parser;
-
+use tempfile::Builder;
+use toml::Table;
 
 #[derive(Deserialize)]
 struct AzureConfig {
@@ -210,10 +209,30 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
     // check if cache file exists
     if std::path::Path::new(&cache_filename).exists() {
         println!("Cache file {} exists", cache_filename);
-        received_file.cached_filename = cache_filename;
-        received_file.headers = get_headers_from_file(cache_filename_headers);
-        received_file.valid = true;
-        return received_file;
+        // is cached file non-zero length?
+        let metadata = std::fs::metadata(&cache_filename).unwrap();
+        if metadata.len() > 0 {
+            println!("Cache file {} is non-zero length", cache_filename);
+            received_file.cached_filename = cache_filename;
+            received_file.headers = get_headers_from_file(cache_filename_headers);
+            received_file.valid = true;
+            return received_file;
+        } else {
+            // delete cache file and headers
+            println!("Cache file {} is zero length, deleting", cache_filename);
+            match std::fs::remove_file(&cache_filename) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Error deleting cached file {}: {:?}", cache_filename_headers, e);
+                }
+            }
+            match std::fs::remove_file(&cache_filename_headers) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Error deleting cached file {}: {:?}", cache_filename_headers, e);
+                }
+            }
+        }
     }
     println!(
         "Downloading blob to cache file {} from {}",

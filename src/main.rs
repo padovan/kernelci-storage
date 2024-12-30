@@ -21,13 +21,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum_server::tls_rustls::RustlsConfig;
+use clap::Parser;
 use headers::HeaderMap;
+use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
-use clap::Parser;
 use toml::Table;
-use std::{path::PathBuf, net::SocketAddr};
-use axum_server::tls_rustls::RustlsConfig;
 
 const TOKEN: &str = "SuperSecretToken";
 
@@ -37,10 +37,20 @@ struct Args {
     #[clap(short, long, default_value = "./", help = "Directory to store files")]
     files_directory: String,
 
-    #[clap(short, long, default_value = "./ssl", help = "Directory with cert.pem and key.pem")]
+    #[clap(
+        short,
+        long,
+        default_value = "./ssl",
+        help = "Directory with cert.pem and key.pem"
+    )]
     ssl_directory: String,
 
-    #[clap(short, long, default_value = "./config.toml", help = "Config file, relative to files_directory")]
+    #[clap(
+        short,
+        long,
+        default_value = "./config.toml",
+        help = "Config file, relative to files_directory"
+    )]
     config_file: String,
 }
 
@@ -91,10 +101,8 @@ async fn initial_setup() -> Option<RustlsConfig> {
     }
 
     let config = RustlsConfig::from_pem_file(
-        PathBuf::from(&args.ssl_directory)
-            .join("cert.pem"),
-        PathBuf::from(&args.ssl_directory)
-            .join("key.pem"),
+        PathBuf::from(&args.ssl_directory).join("cert.pem"),
+        PathBuf::from(&args.ssl_directory).join("key.pem"),
     )
     .await;
     match config {
@@ -115,19 +123,19 @@ async fn main() {
     let tlscfg = initial_setup().await;
     let port = 3000;
     println!("Starting server, tls: {:?}", tlscfg);
-    
+
     // Supported endpoints:
     // GET / - root
     // GET /v1/checkauth - check if the token is correct
     // POST /v1/file and /upload - upload file
     // GET /*filepath - get file
     let app = Router::new()
-        .layer(DefaultBodyLimit::max(1024 * 1024 * 4096))
         .route("/", get(root))
         .route("/v1/checkauth", get(ax_check_auth))
         .route("/v1/file", post(ax_post_file))
         .route("/upload", post(ax_post_file))
-        .route("/*filepath", get(ax_get_file));
+        .route("/*filepath", get(ax_get_file))
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4));
 
     if let Some(tlscfg) = tlscfg {
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -209,11 +217,16 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
                         Some(filename) => file0_filename = filename.to_string(),
                         None => todo!(),
                     }
+                } else {
+                    println!("Unknown field: {} len: {}", name, data.len());
                 }
             }
             Err(e) => {
-                eprintln!("Error reading file: {:?}", e);
-                break;
+                eprintln!(
+                    "Error reading file: {:?} for name {}. Axum size upload limit?",
+                    e, name
+                );
+                return (StatusCode::BAD_REQUEST, Vec::new());
             }
         }
     }
@@ -223,6 +236,12 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
         file0_filename,
         path
     );
+    // if path ends on /, remove it
+    if path.ends_with("/") {
+        // TBD: Fix it!
+        println!("Removing trailing /, workaround");
+        path.pop();
+    }
     let full_path = format!("{}/{}", path, file0_filename);
     let message = write_file_driver(full_path, file0);
     if message != "" {
@@ -268,6 +287,7 @@ async fn ax_get_file(
 
     /* Usually HEAD is used to check if the file exists and range is supported */
     if method == axum::http::Method::HEAD {
+        println!("HEAD request, returning headers only");
         return (headers, Body::empty()).into_response();
     }
     match tokio::fs::File::open(&cached_file).await {
@@ -354,8 +374,6 @@ fn parse_range(range: &str) -> (u64, u64) {
     }
 }
 
-
-
 /// Verify the Authorization header
 fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
     let auth = headers.get("Authorization");
@@ -371,7 +389,7 @@ fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
             Ok(_) => return "",
             Err(_) => {
                 println!("Error verifying token");
-                return "Invalid Token"
+                return "Invalid Token";
             }
         }
 
