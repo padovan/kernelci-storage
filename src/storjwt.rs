@@ -18,7 +18,7 @@ pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt
     let token: Token<Header, BTreeMap<String, String>, _> = match verify_result {
         Ok(token) => token,
         Err(e) => {
-            println!("verify_result Error: {:?}", e);
+            println!("verify_result Error: {:?} token_str: {}", e, token_str);
             return Err(e);
         }
     };

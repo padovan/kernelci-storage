@@ -27,6 +27,7 @@ use headers::HeaderMap;
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
+use std::path;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -104,11 +105,11 @@ async fn initial_setup() -> Option<RustlsConfig> {
     .await;
     match config {
         Ok(tlsconf) => {
-            println!("TLS config loaded");
+            println!("TLS config loaded, HTTPS mode enabled");
             Some(tlsconf)
         }
         Err(e) => {
-            eprintln!("Error reading TLS config: {:?}", e);
+            eprintln!("TLS config error: {:?}, switching to plain HTTP", e);
             None
         }
     }
@@ -176,6 +177,7 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
     let message = verify_auth_hdr(&headers);
     // return status and message
     if message != "" {
+        println!("Unauthorized POST request");
         return (StatusCode::UNAUTHORIZED, Vec::new());
     }
     println!("Authorized");
@@ -247,6 +249,15 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
     (StatusCode::OK, Vec::new())
 }
 
+fn filename_from_fullpath(filepath: &str) -> String {
+    let path = path::Path::new(filepath);
+    let filename = path.file_name();
+    match filename {
+        Some(filename) => return filename.to_str().unwrap().to_string(),
+        None => return filepath.to_string(),
+    }
+}
+
 /*
     Retrieve file in the server from the cache/storage and return it to the client
 
@@ -274,12 +285,12 @@ async fn ax_get_file(
         header::CONTENT_TYPE,
         "application/octet-stream".parse().unwrap(),
     );
+    let filename_only = filename_from_fullpath(&original_filename);
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{}\"", &original_filename)
-            .parse()
-            .unwrap(),
+        format!("attachment; filename=\"{}\"", filename_only).parse().unwrap(),
     );
+
     headers.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
 
     /* Usually HEAD is used to check if the file exists and range is supported */
