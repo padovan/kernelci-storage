@@ -15,19 +15,21 @@ mod storjwt;
 
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Multipart, Path},
+    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, Request},
     http::{header, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Router,
 };
+use axum_client_ip::{InsecureClientIp, SecureClientIp, SecureClientIpSource};
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use headers::HeaderMap;
+use std::path;
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
-use std::path;
+use tower::ServiceBuilder;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -120,6 +122,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let tlscfg = initial_setup().await;
     let port = 3000;
+
     println!("Starting server, tls: {:?}", tlscfg);
 
     // Supported endpoints:
@@ -133,17 +136,30 @@ async fn main() {
         .route("/v1/file", post(ax_post_file))
         .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file))
-        .layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4));
+        .layer(
+            ServiceBuilder::new()
+                .layer(SecureClientIpSource::ConnectInfo.into_extension())
+                .layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)),
+        );
 
+    /*
+            .layer(SecureClientIpSource::ConnectInfo.into_extension())
+            .layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4));
+    */
     if let Some(tlscfg) = tlscfg {
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        //            .serve(app.into_make_service())
         axum_server::bind_rustls(addr, tlscfg)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .unwrap();
     } else {
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-        axum::serve(listener, app).await.unwrap();
+        //let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+        //axum::serve(listener, app).await.unwrap();
+        axum_server::bind("0.0.0.0:3000".parse().unwrap())
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap();
     }
 }
 
@@ -267,11 +283,17 @@ fn filename_from_fullpath(filepath: &str) -> String {
     If the token is correct, it will return the content of the file u8
 
 */
+//     req: Request<Body>,
+
+#[axum::debug_handler]
 async fn ax_get_file(
     Path(filepath): Path<String>,
     rxheaders: HeaderMap,
     method: Method,
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
+    //let (mut parts, body) = req.into_parts();
+    println!("GET file: {} Remote: {:?}", filepath, remote_addr);
     let received_file = driver_get_file(filepath.clone());
     if !received_file.valid {
         return (StatusCode::NOT_FOUND, format!("Not Found: {}", filepath)).into_response();
@@ -288,7 +310,9 @@ async fn ax_get_file(
     let filename_only = filename_from_fullpath(&original_filename);
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{}\"", filename_only).parse().unwrap(),
+        format!("attachment; filename=\"{}\"", filename_only)
+            .parse()
+            .unwrap(),
     );
 
     headers.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());

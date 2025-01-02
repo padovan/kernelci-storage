@@ -1,4 +1,4 @@
-use crate::{Args};
+use crate::Args;
 use clap::Parser;
 use hmac::{Hmac, Mac};
 use jwt::{Header, Token, VerifyWithKey};

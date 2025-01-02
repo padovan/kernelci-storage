@@ -223,13 +223,19 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
             match std::fs::remove_file(&cache_filename) {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Error deleting cached file {}: {:?}", cache_filename_headers, e);
+                    eprintln!(
+                        "Error deleting cached file {}: {:?}",
+                        cache_filename_headers, e
+                    );
                 }
             }
             match std::fs::remove_file(&cache_filename_headers) {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Error deleting cached file {}: {:?}", cache_filename_headers, e);
+                    eprintln!(
+                        "Error deleting cached file {}: {:?}",
+                        cache_filename_headers, e
+                    );
                 }
             }
         }
