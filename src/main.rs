@@ -15,13 +15,12 @@ mod storjwt;
 
 use axum::{
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, Request},
+    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path},
     http::{header, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Router,
 };
-use axum_client_ip::{InsecureClientIp, SecureClientIp, SecureClientIpSource};
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use headers::HeaderMap;
@@ -138,7 +137,6 @@ async fn main() {
         .route("/*filepath", get(ax_get_file))
         .layer(
             ServiceBuilder::new()
-                .layer(SecureClientIpSource::ConnectInfo.into_extension())
                 .layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)),
         );
 
@@ -292,8 +290,16 @@ async fn ax_get_file(
     method: Method,
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    //let (mut parts, body) = req.into_parts();
-    println!("GET file: {} Remote: {:?}", filepath, remote_addr);
+    let timestamp = std::time::SystemTime::now();
+    let human_time = chrono::DateTime::<chrono::Utc>::from(timestamp);
+    // or none
+    let user_agent = rxheaders.get("User-Agent");
+    let user_agent_str = match user_agent {
+        Some(user_agent) => user_agent.to_str().unwrap(),
+        None => "",
+    };
+    // remote_addr human_time method filepath
+    println!("{:?} {} {} {} {}", remote_addr, human_time, method, filepath, user_agent_str);
     let received_file = driver_get_file(filepath.clone());
     if !received_file.valid {
         return (StatusCode::NOT_FOUND, format!("Not Found: {}", filepath)).into_response();
