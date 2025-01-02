@@ -171,7 +171,7 @@ fn save_headers_to_file(filename: String, headers: HeaderMap) {
 /// Get file from Azure blob storage
 async fn get_file_from_blob(filename: String) -> ReceivedFile {
     let azure_cfg = Arc::new(get_azure_credentials("azure"));
-    println!("get_file_from_blob {}", filename);
+    //println!("get_file_from_blob {}", filename);
     let storage_account = azure_cfg.account.as_str();
     let storage_key = azure_cfg.key.clone();
     let storage_container = azure_cfg.container.as_str();
@@ -192,7 +192,7 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
 
     match blob_url_res {
         Ok(url) => {
-            println!("Blob URL: {}", url);
+            //println!("Blob URL: {}", url);
             blob_url = url.to_string();
         }
         Err(e) => {
@@ -208,11 +208,11 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
     let cache_filename_headers = format!("cache/{}.headers", digest.to_hex_lowercase());
     // check if cache file exists
     if std::path::Path::new(&cache_filename).exists() {
-        println!("Cache file {} exists", cache_filename);
+        //println!("Cache file {} exists", cache_filename);
         // is cached file non-zero length?
         let metadata = std::fs::metadata(&cache_filename).unwrap();
         if metadata.len() > 0 {
-            println!("Cache file {} is non-zero length", cache_filename);
+            //println!("Cache file {} is non-zero length", cache_filename);
             received_file.cached_filename = cache_filename;
             received_file.headers = get_headers_from_file(cache_filename_headers);
             received_file.valid = true;
@@ -240,10 +240,12 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
             }
         }
     }
+    /*
     println!(
         "Downloading blob to cache file {} from {}",
         cache_filename, blob_url
     );
+    */
     let client = Client::new();
     let response = client.get(blob_url).send().await;
     match response {

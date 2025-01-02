@@ -135,10 +135,7 @@ async fn main() {
         .route("/v1/file", post(ax_post_file))
         .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file))
-        .layer(
-            ServiceBuilder::new()
-                .layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)),
-        );
+        .layer(ServiceBuilder::new().layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)));
 
     /*
             .layer(SecureClientIpSource::ConnectInfo.into_extension())
@@ -292,16 +289,18 @@ async fn ax_get_file(
 ) -> impl IntoResponse {
     let timestamp = std::time::SystemTime::now();
     let human_time = chrono::DateTime::<chrono::Utc>::from(timestamp);
-    // or none
     let user_agent = rxheaders.get("User-Agent");
     let user_agent_str = match user_agent {
         Some(user_agent) => user_agent.to_str().unwrap(),
         None => "",
     };
-    // remote_addr human_time method filepath
-    println!("{:?} {} {} {} {}", remote_addr, human_time, method, filepath, user_agent_str);
+
     let received_file = driver_get_file(filepath.clone());
     if !received_file.valid {
+        println!(
+            "{:?} 404 0 {} {} {} {}",
+            remote_addr, human_time, method, filepath, user_agent_str
+        );
         return (StatusCode::NOT_FOUND, format!("Not Found: {}", filepath)).into_response();
     }
     let cached_file = received_file.cached_filename;
@@ -325,7 +324,11 @@ async fn ax_get_file(
 
     /* Usually HEAD is used to check if the file exists and range is supported */
     if method == axum::http::Method::HEAD {
-        println!("HEAD request, returning headers only");
+        //println!("HEAD request, returning headers only");
+        println!(
+            "{:?} 200 0 {} {} {} {}",
+            remote_addr, human_time, method, filepath, user_agent_str
+        );
         return (headers, Body::empty()).into_response();
     }
     match tokio::fs::File::open(&cached_file).await {
@@ -370,14 +373,32 @@ async fn ax_get_file(
             let stream = ReaderStream::new(file);
             let axbody = Body::from_stream(stream);
 
-            println!("Headers: {:?}", headers);
+            //println!("Headers: {:?}", headers);
             if start != 0 {
+                let body_size = end - start;
+                println!(
+                    "{:?} 206 {} {} {} {} {}",
+                    remote_addr, body_size, human_time, method, filepath, user_agent_str
+                );
                 return (StatusCode::PARTIAL_CONTENT, headers, axbody).into_response();
             }
+            println!(
+                "{:?} 200 {} {} {} {} {}",
+                remote_addr,
+                metadata.len(),
+                human_time,
+                method,
+                filepath,
+                user_agent_str
+            );
             return (StatusCode::OK, headers, axbody).into_response();
         }
         Err(_) => {
             println!("Error opening file in ax_get_file");
+            println!(
+                "{:?} 404 0 {} {} {} {}",
+                remote_addr, human_time, method, filepath, user_agent_str
+            );
             return (StatusCode::NOT_FOUND, headers, Body::empty()).into_response();
         }
     };
