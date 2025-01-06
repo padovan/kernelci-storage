@@ -131,6 +131,7 @@ async fn main() {
     // GET /*filepath - get file
     let app = Router::new()
         .route("/", get(root))
+        .route("/favicon.ico", get(get_favicon))
         .route("/v1/checkauth", get(ax_check_auth))
         .route("/v1/file", post(ax_post_file))
         .route("/upload", post(ax_post_file))
@@ -162,15 +163,26 @@ async fn root() -> &'static str {
     "KernelCI Storage Server"
 }
 
+/// Redirect favicon.ico to https://kernelci.org/favicon.ico
+async fn get_favicon() -> (StatusCode, &'static str) {
+    (
+        StatusCode::MOVED_PERMANENTLY,
+        "https://kernelci.org/favicon.ico",
+    )
+}
+
 /// Check if the Authorization header is present and if the token is correct    
 /// Test it by: curl -X GET http://localhost:3000/v1/checkauth -H "Authorization: Bearer SuperSecretToken"
-async fn ax_check_auth(headers: HeaderMap) -> (StatusCode, &'static str) {
+async fn ax_check_auth(headers: HeaderMap) -> (StatusCode, String) {
     let message = verify_auth_hdr(&headers);
 
-    if message == "" {
-        (StatusCode::OK, "Authorized")
-    } else {
-        (StatusCode::UNAUTHORIZED, message)
+    match message {
+        Ok(email) => {
+            let message = format!("Authorized: {}", email);
+            println!("Authorized: {}", email);
+            (StatusCode::OK, message)
+        }
+        Err(_) => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
     }
 }
 
@@ -186,11 +198,10 @@ async fn ax_check_auth(headers: HeaderMap) -> (StatusCode, &'static str) {
 async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCode, Vec<u8>) {
     // call check_auth
     let message = verify_auth_hdr(&headers);
-    // return status and message
-    if message != "" {
-        println!("Unauthorized POST request");
-        return (StatusCode::UNAUTHORIZED, Vec::new());
-    }
+    let owner = match message {
+        Ok(owner) => owner,
+        Err(_) => return (StatusCode::UNAUTHORIZED, Vec::new()),
+    };
     println!("Authorized");
 
     /* 100-continue Expect is broken, quite hard to fix in axum */
@@ -257,6 +268,9 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
     if message != "" {
         return (StatusCode::CONFLICT, Vec::new());
     }
+    // write metadata file into cache directory
+    //let metadata_filename = format!("{}/{}.metadata", path, file0_filename);
+    //write_cache_metadata(metadata_filename, file0.len());
     (StatusCode::OK, Vec::new())
 }
 
@@ -433,31 +447,43 @@ fn parse_range(range: &str) -> (u64, u64) {
     }
 }
 
+
 /// Verify the Authorization header
-fn verify_auth_hdr(headers: &HeaderMap) -> &'static str {
+/// Return error message + owner if the token is correct
+fn verify_auth_hdr(headers: &HeaderMap) -> Result<String, Option<String>> {
     let auth = headers.get("Authorization");
     match auth {
-        None => return "No Authorization Header",
+        None => return Err(None),
         _ => (),
     }
     let token = auth.unwrap().to_str().unwrap().split_whitespace();
     let token_parts: Vec<&str> = token.collect();
     if token_parts.len() != 2 {
         let verif_result = storjwt::verify_jwt_token(token_parts[0]);
-        match verif_result {
-            Ok(_) => return "",
+        let bmap = match verif_result {
+            Ok(bmap) => bmap.clone(),
             Err(_) => {
                 println!("Error verifying token");
-                return "Invalid Token";
+                return Err(None);
             }
+        };
+        if let Some(email) = bmap.get("email") {
+            return Ok(email.to_string());
+        } else {
+            return Err(None);
         }
     }
     let verif_result = storjwt::verify_jwt_token(token_parts[1]);
-    match verif_result {
-        Ok(_) => return "",
+    let bmap = match verif_result {
+        Ok(bmap) => bmap.clone(),
         Err(_) => {
             println!("Error verifying bearer token");
-            return "Invalid Token";
+            return Err(None);
         }
+    };
+    if let Some(email) = bmap.get("email") {
+        return Ok(email.to_string());
+    } else {
+        return Err(None);
     }
 }
