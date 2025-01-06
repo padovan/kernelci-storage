@@ -113,7 +113,11 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) 
             }
         }
     }
-    match blob_client.put_block_list(blocks).content_type(cont_type).await {
+    match blob_client
+        .put_block_list(blocks)
+        .content_type(cont_type)
+        .await
+    {
         Ok(_) => {
             println!("Block list uploaded");
             let blob_url_res = blob_client.url();

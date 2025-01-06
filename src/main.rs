@@ -287,14 +287,17 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
     }
     let full_path = format!("{}/{}", path, file0_filename);
     let hdr_content_type = headers.get("Content-Type-Upstream");
-    let content_type : String = match hdr_content_type {
+    let content_type: String = match hdr_content_type {
         Some(content_type) => {
             println!("Content-Type: {:?}", content_type);
             content_type.to_str().unwrap().to_string()
-        },
+        }
         None => {
             let heuristic_ctype = heuristic_filetype(file0_filename);
-            println!("Content-Type not found, using heuristics: {}", heuristic_ctype);
+            println!(
+                "Content-Type not found, using heuristics: {}",
+                heuristic_ctype
+            );
             heuristic_ctype
         }
     };
@@ -355,13 +358,19 @@ async fn ax_get_file(
     }
     let cached_file = received_file.cached_filename;
     let original_filename = received_file.original_filename;
+    let upstream_headers = received_file.headers;
     //let file: tokio::fs::File;
     let metadata = tokio::fs::metadata(&cached_file).await.unwrap();
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        "application/octet-stream".parse().unwrap(),
-    );
+    if let Some(content_type) = upstream_headers.get("Content-Type") {
+        println!("Stored content-Type: {:?}", content_type);
+        headers.insert(header::CONTENT_TYPE, content_type.clone());
+    } else {
+        headers.insert(
+            header::CONTENT_TYPE,
+            "application/octet-stream".parse().unwrap(),
+        );
+    }
     let filename_only = filename_from_fullpath(&original_filename);
     headers.insert(
         header::CONTENT_DISPOSITION,
@@ -482,7 +491,6 @@ fn parse_range(range: &str) -> (u64, u64) {
         Err(_) => return (start, 0),
     }
 }
-
 
 /// Verify the Authorization header
 /// Return error message + owner if the token is correct
