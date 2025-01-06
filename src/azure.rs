@@ -57,7 +57,7 @@ fn get_azure_credentials(name: &str) -> AzureConfig {
 
 /// Write file to Azure blob storage
 /// TBD: Rework, do not keep whole file as Vec<u8> in memory!!!
-async fn write_file_to_blob(filename: String, data: Vec<u8>) -> &'static str {
+async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) -> &'static str {
     let azure_cfg = Arc::new(get_azure_credentials("azure"));
 
     let storage_account = azure_cfg.account.as_str();
@@ -113,7 +113,7 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>) -> &'static str {
             }
         }
     }
-    match blob_client.put_block_list(blocks).await {
+    match blob_client.put_block_list(blocks).content_type(cont_type).await {
         Ok(_) => {
             println!("Block list uploaded");
             let blob_url_res = blob_client.url();
@@ -277,13 +277,14 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
 
 /// Implement Driver trait for AzureDriver
 impl super::Driver for AzureDriver {
-    fn write_file(&self, filename: String, data: Vec<u8>) -> &str {
+    fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String {
+        let filenameret = filename.clone();
         /* Call async write_file_to_blob use tokio::task::block_in_place */
         tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(write_file_to_blob(filename, data));
+            rt.block_on(write_file_to_blob(filename, data, cont_type));
         });
-        return "";
+        return filenameret;
     }
     fn get_file(&self, filename: String) -> ReceivedFile {
         /* Call async get_file_from_blob use tokio::task::block_in_place */

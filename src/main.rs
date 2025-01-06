@@ -61,7 +61,7 @@ struct ReceivedFile {
 }
 
 trait Driver {
-    fn write_file(&self, filename: String, data: Vec<u8>) -> &str;
+    fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String;
     fn get_file(&self, filename: String) -> ReceivedFile;
 }
 
@@ -186,6 +186,28 @@ async fn ax_check_auth(headers: HeaderMap) -> (StatusCode, String) {
     }
 }
 
+// Guess content type based on filename (extension)
+fn heuristic_filetype(filename: String) -> String {
+    let ext = filename.split(".").last();
+    let extension = match ext {
+        Some(ext) => ext,
+        None => "bin",
+    };
+
+    match extension {
+        "bin" => "application/octet-stream".to_string(),
+        "txt" => "text/plain".to_string(),
+        "gz" => "application/gzip".to_string(),
+        "tar" => "application/x-tar".to_string(),
+        "zip" => "application/zip".to_string(),
+        "tgz" => "application/x-gzip".to_string(),
+        "log" => "text/plain".to_string(),
+        "xz" => "application/x-xz".to_string(),
+        "lz" => "application/x-lzip".to_string(),
+        &_ => "application/octet-stream".to_string(),
+    }
+}
+
 /*
     Upload file from user to remote storage
     TBD: Store file in cache as well?
@@ -264,7 +286,21 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
         path.pop();
     }
     let full_path = format!("{}/{}", path, file0_filename);
-    let message = write_file_driver(full_path, file0);
+    let hdr_content_type = headers.get("Content-Type-Upstream");
+    let content_type : String = match hdr_content_type {
+        Some(content_type) => {
+            println!("Content-Type: {:?}", content_type);
+            content_type.to_str().unwrap().to_string()
+        },
+        None => {
+            let heuristic_ctype = heuristic_filetype(file0_filename);
+            println!("Content-Type not found, using heuristics: {}", heuristic_ctype);
+            heuristic_ctype
+        }
+    };
+
+    // TBD
+    let message = write_file_driver(full_path, file0, content_type.to_string());
     if message != "" {
         return (StatusCode::CONFLICT, Vec::new());
     }
@@ -424,11 +460,11 @@ fn driver_get_file(filepath: String) -> ReceivedFile {
     return driver.get_file(filepath);
 }
 
-fn write_file_driver(filename: String, data: Vec<u8>) -> &'static str {
+fn write_file_driver(filename: String, data: Vec<u8>, cont_type: String) -> String {
     let driver_name = "azure";
     let driver = init_driver(driver_name);
-    driver.write_file(filename, data);
-    return "";
+    driver.write_file(filename, data, cont_type);
+    return "".to_string();
 }
 
 /// Parse range header
