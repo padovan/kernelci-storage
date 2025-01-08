@@ -12,6 +12,7 @@ azure_storage_blobs = "0.21.0"
 chksum-hash-sha2-512 = "0.0.1"
 chrono = "0.4.39"
 clap = { version = "4.5.23", features = ["derive"] }
+fs2 = "0.4.3"
 futures = "0.3.31"
 futures-util = "0.3.31"
 headers = "0.4.0"

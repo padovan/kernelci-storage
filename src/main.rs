@@ -12,6 +12,7 @@
 
 mod azure;
 mod storjwt;
+mod storcaching;
 
 use axum::{
     body::Body,
@@ -91,6 +92,9 @@ async fn initial_setup() -> Option<RustlsConfig> {
     if !std::path::Path::new(cache_dir).exists() {
         std::fs::create_dir(cache_dir).unwrap();
     }
+
+    let _handle = tokio::spawn(storcaching::cache_loop(cache_dir));
+
     if !std::path::Path::new(download_dir).exists() {
         std::fs::create_dir(download_dir).unwrap();
     }
@@ -114,6 +118,8 @@ async fn initial_setup() -> Option<RustlsConfig> {
             None
         }
     }
+
+    
 }
 
 #[tokio::main]
@@ -204,6 +210,7 @@ fn heuristic_filetype(filename: String) -> String {
         "log" => "text/plain".to_string(),
         "xz" => "application/x-xz".to_string(),
         "lz" => "application/x-lzip".to_string(),
+        "json" => "application/json".to_string(),
         &_ => "application/octet-stream".to_string(),
     }
 }
