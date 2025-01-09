@@ -90,17 +90,28 @@ async fn clean_disk(cache_dir: String) {
     delete_cache_file(oldest_file.file);
 }
 
+/// Cache housekeeping loop
+/// This function will check the disk space every and clean with some hysteresis
 pub async fn cache_loop(cache_dir: &str) {
+    let mut cleaning_on : bool = false;
     loop {
         let free_space = freediskspace_percent(cache_dir.to_string()).await;
-        if free_space < 10 {
-            println!("Low disk space: {}%", free_space);
+        if free_space < 12 && !cleaning_on {
+            cleaning_on = true;
+            println!("Free disk is LOW: {}%, cleaning is on", free_space);
+        }
+        if free_space > 13 && cleaning_on {
+            cleaning_on = false;
+            println!("Free disk space is OK: {}%, cleaning is off", free_space);
+        }
+
+        if cleaning_on {
             clean_disk(cache_dir.to_string()).await;
             // critical mode, sleep only 100ms
             tokio::time::sleep(Duration::from_millis(100)).await;
         } else {
             println!("Free disk space: {}%", free_space);
-            // sleep for 10 seconds before checking again
+            // normal mode, sleep 10 seconds
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
     }
