@@ -67,8 +67,8 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) 
     let folder = Builder::new().prefix("temp").tempdir_in("./").unwrap();
     let file_path = folder.path().display().to_string();
     let mut f_write = Builder::new()
-        .prefix("hello")
-        .suffix(".txt")
+        .prefix("upload")
+        .suffix(".temp")
         .tempfile_in(file_path)
         .unwrap();
     f_write.write_all(&data).unwrap();
