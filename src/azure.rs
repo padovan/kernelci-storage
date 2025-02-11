@@ -26,6 +26,7 @@ use std::io::Write;
 use std::sync::Arc;
 use tempfile::Builder;
 use toml::Table;
+use std::fs::read_to_string;
 
 #[derive(Deserialize)]
 struct AzureConfig {
@@ -136,8 +137,6 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) 
     }
     return "OK";
 }
-
-use std::fs::read_to_string;
 
 /// Get headers from file (Maybe should be moved to a separate module, its not Azure specific)
 fn get_headers_from_file(filename: String) -> HeaderMap {
