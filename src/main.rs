@@ -64,6 +64,7 @@ struct ReceivedFile {
 trait Driver {
     fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String;
     fn get_file(&self, filename: String) -> ReceivedFile;
+    fn tag_file(&self, filename: String, user_tags: Vec<(String, String)>) -> Result<String, String>;
 }
 
 fn init_driver(driver_type: &str) -> Box<dyn Driver> {

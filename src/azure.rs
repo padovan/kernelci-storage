@@ -13,7 +13,7 @@ impl AzureDriver {
 use crate::{Args, ReceivedFile};
 use axum::http::{HeaderName, HeaderValue};
 use azure_storage::StorageCredentials;
-use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder};
+use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder, Tags};
 use chksum_hash_sha2_512 as sha2_512;
 use clap::Parser;
 use headers::HeaderMap;
@@ -278,6 +278,34 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
     return received_file;
 }
 
+// Implement set tags for Azure blob storage
+// tags are in format "key=value"
+async fn azure_set_filename_tags(filename: String, user_tags: Vec<(String, String)>) -> Result<String, String> {
+    let azure_cfg = Arc::new(get_azure_credentials("azure"));
+    let storage_account = azure_cfg.account.as_str();
+    let storage_key = azure_cfg.key.clone();
+    let storage_container = azure_cfg.container.as_str();
+    let storage_blob = filename.as_str();
+    let storage_credential = StorageCredentials::access_key(storage_account, storage_key);
+    let blob_client = ClientBuilder::new(storage_account, storage_credential)
+        .blob_client(storage_container, storage_blob);
+    let mut tags = Tags::new();
+    // iterate and add tags, tags are in format "
+    for tag in user_tags {
+        let (tag, value) = tag;
+        tags.insert(tag, value);
+    }
+    let res = blob_client.set_tags(tags).await;
+    match res {
+        Ok(_) => {
+            return Ok(String::from("OK"));
+        }
+        Err(e) => {
+            return Err(e.to_string());
+        }
+    }
+}
+
 /// Implement Driver trait for AzureDriver
 impl super::Driver for AzureDriver {
     fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String {
@@ -288,6 +316,11 @@ impl super::Driver for AzureDriver {
             rt.block_on(write_file_to_blob(filename, data, cont_type));
         });
         return filenameret;
+    }
+    fn tag_file(&self, filename: String, user_tags: Vec<(String, String)>) -> Result<String, String> {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let ret = rt.block_on(azure_set_filename_tags(filename, user_tags));
+        return ret;
     }
     fn get_file(&self, filename: String) -> ReceivedFile {
         /* Call async get_file_from_blob use tokio::task::block_in_place */
