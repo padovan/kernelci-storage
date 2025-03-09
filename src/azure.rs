@@ -27,6 +27,9 @@ use std::sync::Arc;
 use tempfile::Builder;
 use toml::Table;
 use std::fs::read_to_string;
+use futures::Stream;
+use futures::stream::StreamExt;
+use azure_storage_blobs::container::operations::BlobItem;
 
 #[derive(Deserialize)]
 struct AzureConfig {
@@ -306,6 +309,33 @@ async fn azure_set_filename_tags(filename: String, user_tags: Vec<(String, Strin
     }
 }
 
+async fn azure_list_files(directory: String) -> Vec<String> {
+    let azure_cfg = Arc::new(get_azure_credentials("azure"));
+    let storage_account = azure_cfg.account.as_str();
+    let storage_key = azure_cfg.key.clone();
+    let storage_container = azure_cfg.container.as_str();
+    let storage_credential = StorageCredentials::access_key(storage_account, storage_key);
+    let container_r = ClientBuilder::new(storage_account, storage_credential)
+        .container_client(storage_container);
+    let listbldr = container_r.list_blobs();
+    let mut liststream = listbldr.into_stream();
+    let mut listing = Vec::new();
+    while let Some(Ok(page)) = liststream.next().await {
+        let blobs = page.blobs.items;
+        for blob in blobs {
+            let blob_name = match blob {
+                BlobItem::Blob(blob) => blob.name,
+                BlobItem::BlobPrefix(blob_prefix) => blob_prefix.name,
+            };
+            listing.push(blob_name.clone());
+            
+        }
+        println!("Listing count: {}", listing.len());
+    }
+    //println!("Listing: {:?}", listing);
+    return listing;
+}
+
 /// Implement Driver trait for AzureDriver
 impl super::Driver for AzureDriver {
     fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String {
@@ -335,5 +365,13 @@ impl super::Driver for AzureDriver {
             received_file = rt.block_on(get_file_from_blob(filename));
         });
         return received_file;
+    }
+    fn list_files(&self, directory: String) -> Vec<String> {
+        let mut ret = Vec::new();
+        tokio::task::block_in_place(|| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            ret = rt.block_on(azure_list_files(directory));
+        });
+        return ret;
     }
 }

@@ -65,6 +65,7 @@ trait Driver {
     fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String;
     fn get_file(&self, filename: String) -> ReceivedFile;
     fn tag_file(&self, filename: String, user_tags: Vec<(String, String)>) -> Result<String, String>;
+    fn list_files(&self, directory: String) -> Vec<String>;
 }
 
 fn init_driver(driver_type: &str) -> Box<dyn Driver> {
@@ -143,6 +144,7 @@ async fn main() {
         .route("/v1/file", post(ax_post_file))
         .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file))
+        .route("/v1/list", get(ax_list_files))
         .layer(ServiceBuilder::new().layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)));
 
     /*
@@ -538,4 +540,13 @@ fn verify_auth_hdr(headers: &HeaderMap) -> Result<String, Option<String>> {
     } else {
         return Err(None);
     }
+}
+
+async fn ax_list_files() -> (StatusCode, String) {
+    let driver_name = "azure";
+    let driver = init_driver(driver_name);
+    let files = driver.list_files("/".to_string());
+    // generate nice list of files, with one file per line
+    let files_str = files.join("\n");
+    return (StatusCode::OK, files_str);
 }
