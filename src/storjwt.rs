@@ -36,3 +36,15 @@ pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt
     }
     Ok(claims.clone())
 }
+
+pub fn generate_jwt_secret() {
+    // generate a random 32 bytes alphanumeric string
+    use rand::{distributions::Alphanumeric, Rng};
+    
+    let secret: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+    println!("jwt_secret=\"{}\"", secret);
+}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
-// Copyright (C) 2024 Collabora, Ltd.
+// Copyright (C) 2024-2025 Collabora, Ltd.
 // Author: Denys Fedoryshchenko <denys.f@collabora.com>
 /*
    KernelCI Storage Server
@@ -53,6 +53,13 @@ struct Args {
         help = "Config file, relative to files_directory"
     )]
     config_file: String,
+
+    #[clap(
+        short,
+        long,
+        help = "Generate JWT secret"
+    )]
+    generate_jwt_secret: bool,
 }
 
 struct ReceivedFile {
@@ -86,6 +93,11 @@ async fn initial_setup() -> Option<RustlsConfig> {
     let cache_dir = "cache";
     let download_dir = "download";
     let args = Args::parse();
+
+    if args.generate_jwt_secret {
+        storjwt::generate_jwt_secret();
+        std::process::exit(0);
+    }
 
     if let Err(e) = std::env::set_current_dir(&args.files_directory) {
         eprintln!("Error changing directory: {}", e);
