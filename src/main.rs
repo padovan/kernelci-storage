@@ -57,9 +57,17 @@ struct Args {
     #[clap(
         short,
         long,
+        default_value = "false",
         help = "Generate JWT secret"
     )]
     generate_jwt_secret: bool,
+
+    #[clap(
+        long,
+        default_value = "",
+        help = "Generate JWT token for email"
+    )]
+    generate_jwt_token: String,
 }
 
 struct ReceivedFile {
@@ -96,6 +104,19 @@ async fn initial_setup() -> Option<RustlsConfig> {
 
     if args.generate_jwt_secret {
         storjwt::generate_jwt_secret();
+        std::process::exit(0);
+    }
+
+    if args.generate_jwt_token != "" {
+        let token_r = storjwt::generate_jwt_token(&args.generate_jwt_token);
+        let token = match token_r {
+            Ok(token) => token,
+            Err(e) => {
+                eprintln!("Error generating JWT token: {}", e);
+                std::process::exit(1);
+            }
+        };
+        println!("JWT token: {}", token);
         std::process::exit(0);
     }
 
