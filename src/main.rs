@@ -96,6 +96,13 @@ fn init_driver(driver_type: &str) -> Box<dyn Driver> {
     return driver;
 }
 
+pub fn get_config_content() -> String {
+    let args = Args::parse();
+    let cfg_file = PathBuf::from(&args.config_file);
+    let cfg_content = std::fs::read_to_string(&cfg_file).unwrap();
+    cfg_content
+}
+
 /// Initial variables configuration and checks
 async fn initial_setup() -> Option<RustlsConfig> {
     let cache_dir = "cache";

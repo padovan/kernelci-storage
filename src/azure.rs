@@ -10,7 +10,7 @@ impl AzureDriver {
     }
 }
 
-use crate::{Args, ReceivedFile};
+use crate::{Args, ReceivedFile, get_config_content};
 use axum::http::{HeaderName, HeaderValue};
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder, Tags};
@@ -41,13 +41,7 @@ struct AzureConfig {
 
 /// Get Azure credentials from config.toml
 fn get_azure_credentials(name: &str) -> AzureConfig {
-    let args = Args::parse();
-    let mut cfg_file = args.config_file;
-    // check if env variable available KCI_STORAGE_CONFIG
-    if let Ok(env_cfg_file) = std::env::var("KCI_STORAGE_CONFIG") {
-        cfg_file = env_cfg_file;
-    }
-    let cfg_content = std::fs::read_to_string(cfg_file).unwrap();
+    let cfg_content = get_config_content();
     let cfg: Table = toml::from_str(&cfg_content).unwrap();
     let azure_cfg = cfg.get(name).unwrap();
     let account = azure_cfg.get("account").unwrap().as_str().unwrap();
