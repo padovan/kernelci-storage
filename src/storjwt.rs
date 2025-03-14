@@ -4,7 +4,6 @@ use jwt::{Header, Token, VerifyWithKey, SignWithKey};
 use sha2::Sha256;
 use std::collections::BTreeMap;
 use toml::value::Table;
-use rand::{distributions::Alphanumeric, Rng};
 pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt::Error> {
     // config.toml, jwt_secret parameter
     let toml_cfg = get_config_content();

@@ -10,12 +10,11 @@ impl AzureDriver {
     }
 }
 
-use crate::{Args, ReceivedFile, get_config_content};
+use crate::{ReceivedFile, get_config_content};
 use axum::http::{HeaderName, HeaderValue};
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder, Tags};
 use chksum_hash_sha2_512 as sha2_512;
-use clap::Parser;
 use headers::HeaderMap;
 use hex;
 use reqwest::Client;
@@ -27,7 +26,6 @@ use std::sync::Arc;
 use tempfile::Builder;
 use toml::Table;
 use std::fs::read_to_string;
-use futures::Stream;
 use futures::stream::StreamExt;
 use azure_storage_blobs::container::operations::BlobItem;
 
