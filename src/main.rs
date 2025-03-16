@@ -30,6 +30,7 @@ use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
 use tower::ServiceBuilder;
+use toml::Table;
 
 
 #[derive(Parser, Debug)]
@@ -271,6 +272,44 @@ fn heuristic_filetype(filename: String) -> String {
 }
 
 /*
+Example config.toml section:
+
+[users]
+[users.alice]
+prefixes = ["/alice"]
+[users.bob]
+prefixes = ["/bob"]
+[users.admin]
+prefixes = [""]
+*/
+
+fn verify_upload_permissions(owner: &str, path: &str) -> Result<(), String> {
+    let cfg_content = get_config_content();
+    let cfg: Table = toml::from_str(&cfg_content).unwrap();
+    let users_r = cfg.get("users");
+    let users = match users_r {
+        Some(users) => users,
+        None => {
+            println!("No users section in config.toml, ignoring upload path restriction");
+            return Ok(());
+        }
+    };
+    let users_vec = users.as_array().unwrap();
+    for user in users_vec {
+        let user_name = user.get("name").unwrap().as_str().unwrap();
+        let user_prefixes = user.get("prefixes").unwrap();
+        let user_prefixes_vec = user_prefixes.as_array().unwrap();
+        for prefix_value in user_prefixes_vec {
+            let prefix = prefix_value.as_str().unwrap();
+            if (path.starts_with(prefix) || prefix == "") && user_name == owner {
+                return Ok(());
+            }
+        }
+    }
+    Err(format!("User {} has no upload permissions for path {}", owner, path))
+}
+
+/*
     Upload file from user to remote storage
     TBD: Store file in cache as well?
 
@@ -303,6 +342,14 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
     let mut path: String = "".to_string();
     let mut file0: Vec<u8> = Vec::new();
     let mut file0_filename: String = "".to_string();
+
+    // verify upload permissions, some users have upload permissions only for certain prefix(path)
+    // check config.toml for upload_prefixes
+    match verify_upload_permissions(&owner, &path) {
+        Ok(_) => (),
+        Err(e) => return (StatusCode::FORBIDDEN, e.to_string().into_bytes()),
+    }
+
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
