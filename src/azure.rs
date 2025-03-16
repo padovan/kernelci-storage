@@ -199,6 +199,7 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
         }
         Err(e) => {
             eprintln!("Error getting blob URL: {:?}", e);
+            return received_file;
         }
     }
     // append SAS token to blob URL
@@ -210,7 +211,25 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
     let cache_filename_headers = format!("cache/{}.headers", digest.to_hex_lowercase());
     // check if cache file exists
     if std::path::Path::new(&cache_filename).exists() {
+        // check if headers file exists, and if not wait up to 300 seconds
+        // This is to avoid race condition, when we start to download file, but it is not yet completed
+        // and second request to same file downloads incomplete file
+        let mut headers_file_exists = false;
+        for seconds in 0..300 {
+            if std::path::Path::new(&cache_filename_headers).exists() {
+                headers_file_exists = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            println!("Waiting for headers file {} to exist: {} seconds", cache_filename_headers, seconds);
+        }
+
+        if !headers_file_exists {
+            eprintln!("Headers file {} does not exist", cache_filename_headers);
+            return received_file;
+        }
         //println!("Cache file {} exists", cache_filename);
+        // is cached file non-zero length?
         // is cached file non-zero length?
         let metadata = std::fs::metadata(&cache_filename).unwrap();
         if metadata.len() > 0 {
@@ -229,6 +248,7 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
                         "Error deleting cached file {}: {:?}",
                         cache_filename_headers, e
                     );
+                    return received_file;
                 }
             }
             match std::fs::remove_file(&cache_filename_headers) {
@@ -238,6 +258,7 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
                         "Error deleting cached file {}: {:?}",
                         cache_filename_headers, e
                     );
+                    return received_file;
                 }
             }
         }
@@ -259,14 +280,14 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
                 eprintln!("Error getting blob: {:?}", response.status());
                 return received_file;
             }
-            save_headers_to_file(cache_filename_headers, response.headers().clone());
             received_file.headers = response.headers().clone();
+            let resp_headers = response.headers().clone();
             let body = response.bytes().await.unwrap();
             // just write all to cache file
             let mut f = File::create(&cache_filename).unwrap();
             f.write_all(&body).unwrap();
             // write headers
-
+            save_headers_to_file(cache_filename_headers, resp_headers);
             received_file.cached_filename = cache_filename;
             received_file.valid = true;
         }
