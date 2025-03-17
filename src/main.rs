@@ -99,7 +99,10 @@ fn init_driver(driver_type: &str) -> Box<dyn Driver> {
 
 pub fn get_config_content() -> String {
     let args = Args::parse();
-    let cfg_file = PathBuf::from(&args.config_file);
+    let mut cfg_file = PathBuf::from(&args.config_file);
+    if let Ok(cfg_file_env) = std::env::var("KCI_STORAGE_CONFIG") {
+        cfg_file = PathBuf::from(&cfg_file_env);
+    }
     let cfg_content = std::fs::read_to_string(&cfg_file).unwrap();
     cfg_content
 }
