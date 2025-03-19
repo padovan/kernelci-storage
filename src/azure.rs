@@ -55,6 +55,13 @@ fn get_azure_credentials(name: &str) -> AzureConfig {
     };
 }
 
+fn calculate_checksum(filename: &String, data: &[u8]) {
+    let hash = sha2_512::default().update(data).finalize();
+    let digest = hash.digest();
+    println!("File: {} Checksum: {}", filename, digest.to_hex_lowercase());
+    
+}
+
 /// Write file to Azure blob storage
 /// TBD: Rework, do not keep whole file as Vec<u8> in memory!!!
 async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) -> &'static str {
@@ -83,6 +90,8 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) 
     let mut total_bytes_uploaded: usize = 0;
     let chunk_size = 10;
     let mut blocks = BlockList::default();
+
+    calculate_checksum(&filename, &data);
     loop {
         let mut buffer = vec![0; chunk_size * 1024 * 1024];
         let bytes_read = f.read(&mut buffer);
