@@ -88,7 +88,7 @@ fn init_driver(driver_type: &str) -> Box<dyn Driver> {
             std::process::exit(1);
         }
     };
-    return driver;
+    driver
 }
 
 pub fn get_config_content() -> String {
@@ -97,8 +97,8 @@ pub fn get_config_content() -> String {
     if let Ok(cfg_file_env) = std::env::var("KCI_STORAGE_CONFIG") {
         cfg_file = PathBuf::from(&cfg_file_env);
     }
-    let cfg_content = std::fs::read_to_string(&cfg_file).unwrap();
-    cfg_content
+    
+    std::fs::read_to_string(&cfg_file).unwrap()
 }
 
 /// Initial variables configuration and checks
@@ -112,7 +112,7 @@ async fn initial_setup() -> Option<RustlsConfig> {
         std::process::exit(0);
     }
 
-    if args.generate_jwt_token != "" {
+    if !args.generate_jwt_token.is_empty() {
         let token_r = storjwt::generate_jwt_token(&args.generate_jwt_token);
         let token = match token_r {
             Ok(token) => token,
@@ -246,10 +246,7 @@ async fn ax_check_auth(headers: HeaderMap) -> (StatusCode, String) {
 // Guess content type based on filename (extension)
 fn heuristic_filetype(filename: String) -> String {
     let ext = filename.split(".").last();
-    let extension = match ext {
-        Some(ext) => ext,
-        None => "bin",
-    };
+    let extension = ext.unwrap_or("bin");
 
     match extension {
         "bin" => "application/octet-stream".to_string(),
@@ -296,7 +293,7 @@ fn verify_upload_permissions(owner: &str, path: &str) -> Result<(), String> {
         let user_prefixes_vec = user_prefixes.as_array().unwrap();
         for prefix_value in user_prefixes_vec {
             let prefix = prefix_value.as_str().unwrap();
-            if (path.starts_with(prefix) || prefix == "") && user_name == owner {
+            if (path.starts_with(prefix) || prefix.is_empty()) && user_name == owner {
                 return Ok(());
             }
         }
@@ -410,7 +407,7 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
 
     // TBD
     let message = write_file_driver(full_path, file0, content_type.to_string());
-    if message != "" {
+    if !message.is_empty() {
         return (StatusCode::CONFLICT, Vec::new());
     }
     // write metadata file into cache directory
@@ -423,8 +420,8 @@ fn filename_from_fullpath(filepath: &str) -> String {
     let path = path::Path::new(filepath);
     let filename = path.file_name();
     match filename {
-        Some(filename) => return filename.to_str().unwrap().to_string(),
-        None => return filepath.to_string(),
+        Some(filename) => filename.to_str().unwrap().to_string(),
+        None => filepath.to_string(),
     }
 }
 
@@ -564,22 +561,22 @@ async fn ax_get_file(
                 "{:?} 404 0 {} {} {} {}",
                 remote_addr, human_time, method, filepath, user_agent_str
             );
-            return (StatusCode::NOT_FOUND, headers, Body::empty()).into_response();
+            (StatusCode::NOT_FOUND, headers, Body::empty()).into_response()
         }
-    };
+    }
 }
 
 fn driver_get_file(filepath: String) -> ReceivedFile {
     let driver_name = "azure";
     let driver = init_driver(driver_name);
-    return driver.get_file(filepath);
+    driver.get_file(filepath)
 }
 
 fn write_file_driver(filename: String, data: Vec<u8>, cont_type: String) -> String {
     let driver_name = "azure";
     let driver = init_driver(driver_name);
     driver.write_file(filename, data, cont_type);
-    return "".to_string();
+    "".to_string()
 }
 
 /// Parse range header
@@ -593,8 +590,8 @@ fn parse_range(range: &str) -> (u64, u64) {
     }
     let end = range_parts[1].parse::<u64>();
     match end {
-        Ok(end) => return (start, end),
-        Err(_) => return (start, 0),
+        Ok(end) => (start, end),
+        Err(_) => (start, 0),
     }
 }
 
@@ -602,10 +599,7 @@ fn parse_range(range: &str) -> (u64, u64) {
 /// Return error message + owner if the token is correct
 fn verify_auth_hdr(headers: &HeaderMap) -> Result<String, Option<String>> {
     let auth = headers.get("Authorization");
-    match auth {
-        None => return Err(None),
-        _ => (),
-    }
+    if auth == None { return Err(None) }
     let token = auth.unwrap().to_str().unwrap().split_whitespace();
     let token_parts: Vec<&str> = token.collect();
     if token_parts.len() != 2 {
@@ -632,9 +626,9 @@ fn verify_auth_hdr(headers: &HeaderMap) -> Result<String, Option<String>> {
         }
     };
     if let Some(email) = bmap.get("email") {
-        return Ok(email.to_string());
+        Ok(email.to_string())
     } else {
-        return Err(None);
+        Err(None)
     }
 }
 
@@ -644,5 +638,5 @@ async fn ax_list_files() -> (StatusCode, String) {
     let files = driver.list_files("/".to_string());
     // generate nice list of files, with one file per line
     let files_str = files.join("\n");
-    return (StatusCode::OK, files_str);
+    (StatusCode::OK, files_str)
 }

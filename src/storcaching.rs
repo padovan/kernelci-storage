@@ -1,4 +1,3 @@
-use fs2;
 use std::fs;
 use std::time::SystemTime;
 use tokio::time::Duration;

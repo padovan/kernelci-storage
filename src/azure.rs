@@ -18,7 +18,6 @@ use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuil
 use chksum_hash_sha2_512 as sha2_512;
 use futures::stream::StreamExt;
 use headers::HeaderMap;
-use hex;
 use reqwest::Client;
 use serde::Deserialize;
 use std::fs::read_to_string;
@@ -47,12 +46,12 @@ fn get_azure_credentials(name: &str) -> AzureConfig {
     let container = azure_cfg.get("container").unwrap().as_str().unwrap();
     let sastoken = azure_cfg.get("sastoken").unwrap().as_str().unwrap();
     //println!("Azure account: {} key: {} sastoken: {} container: {}", account, key, sastoken, container);
-    return AzureConfig {
+    AzureConfig {
         account: account.to_string(),
         key: key.to_string(),
         container: container.to_string(),
         sastoken: sastoken.to_string(),
-    };
+    }
 }
 
 fn calculate_checksum(filename: &String, data: &[u8]) {
@@ -142,7 +141,7 @@ async fn write_file_to_blob(filename: String, data: Vec<u8>, cont_type: String) 
             eprintln!("Error uploading block list: {:?}", e);
         }
     }
-    return "OK";
+    "OK"
 }
 
 /// Get headers from file (Maybe should be moved to a separate module, its not Azure specific)
@@ -158,7 +157,7 @@ fn get_headers_from_file(filename: String) -> HeaderMap {
             headers.insert(key, value);
         }
     }
-    return headers;
+    headers
 }
 
 /// Save headers(Azure) to file
@@ -306,7 +305,7 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
             eprintln!("Error getting blob: {:?}", e);
         }
     }
-    return received_file;
+    received_file
 }
 
 // Implement set tags for Azure blob storage
@@ -332,10 +331,10 @@ async fn azure_set_filename_tags(
     let res = blob_client.set_tags(tags).await;
     match res {
         Ok(_) => {
-            return Ok(String::from("OK"));
+            Ok(String::from("OK"))
         }
         Err(e) => {
-            return Err(e.to_string());
+            Err(e.to_string())
         }
     }
 }
@@ -363,7 +362,7 @@ async fn azure_list_files(directory: String) -> Vec<String> {
         println!("Listing count: {}", listing.len());
     }
     //println!("Listing: {:?}", listing);
-    return listing;
+    listing
 }
 
 /// Implement Driver trait for AzureDriver
@@ -375,7 +374,7 @@ impl super::Driver for AzureDriver {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(write_file_to_blob(filename, data, cont_type));
         });
-        return filenameret;
+        filenameret
     }
     fn tag_file(
         &self,
@@ -384,7 +383,7 @@ impl super::Driver for AzureDriver {
     ) -> Result<String, String> {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let ret = rt.block_on(azure_set_filename_tags(filename, user_tags));
-        return ret;
+        ret
     }
     fn get_file(&self, filename: String) -> ReceivedFile {
         /* Call async get_file_from_blob use tokio::task::block_in_place */
@@ -398,7 +397,7 @@ impl super::Driver for AzureDriver {
             let rt = tokio::runtime::Runtime::new().unwrap();
             received_file = rt.block_on(get_file_from_blob(filename));
         });
-        return received_file;
+        received_file
     }
     fn list_files(&self, directory: String) -> Vec<String> {
         let mut ret = Vec::new();
@@ -406,6 +405,6 @@ impl super::Driver for AzureDriver {
             let rt = tokio::runtime::Runtime::new().unwrap();
             ret = rt.block_on(azure_list_files(directory));
         });
-        return ret;
+        ret
     }
 }
