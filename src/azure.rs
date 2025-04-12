@@ -10,24 +10,24 @@ impl AzureDriver {
     }
 }
 
-use crate::{ReceivedFile, get_config_content};
+use crate::{get_config_content, ReceivedFile};
 use axum::http::{HeaderName, HeaderValue};
 use azure_storage::StorageCredentials;
+use azure_storage_blobs::container::operations::BlobItem;
 use azure_storage_blobs::prelude::{BlobBlockType, BlockId, BlockList, ClientBuilder, Tags};
 use chksum_hash_sha2_512 as sha2_512;
+use futures::stream::StreamExt;
 use headers::HeaderMap;
 use hex;
 use reqwest::Client;
 use serde::Deserialize;
+use std::fs::read_to_string;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 use std::sync::Arc;
 use tempfile::Builder;
 use toml::Table;
-use std::fs::read_to_string;
-use futures::stream::StreamExt;
-use azure_storage_blobs::container::operations::BlobItem;
 
 #[derive(Deserialize)]
 struct AzureConfig {
@@ -59,7 +59,6 @@ fn calculate_checksum(filename: &String, data: &[u8]) {
     let hash = sha2_512::default().update(data).finalize();
     let digest = hash.digest();
     println!("File: {} Checksum: {}", filename, digest.to_hex_lowercase());
-    
 }
 
 /// Write file to Azure blob storage
@@ -230,7 +229,10 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(1000));
-            println!("Waiting for headers file {} to exist: {} seconds", cache_filename_headers, seconds);
+            println!(
+                "Waiting for headers file {} to exist: {} seconds",
+                cache_filename_headers, seconds
+            );
         }
 
         if !headers_file_exists {
@@ -309,7 +311,10 @@ async fn get_file_from_blob(filename: String) -> ReceivedFile {
 
 // Implement set tags for Azure blob storage
 // tags are in format "key=value"
-async fn azure_set_filename_tags(filename: String, user_tags: Vec<(String, String)>) -> Result<String, String> {
+async fn azure_set_filename_tags(
+    filename: String,
+    user_tags: Vec<(String, String)>,
+) -> Result<String, String> {
     let azure_cfg = Arc::new(get_azure_credentials("azure"));
     let storage_account = azure_cfg.account.as_str();
     let storage_key = azure_cfg.key.clone();
@@ -341,8 +346,8 @@ async fn azure_list_files(directory: String) -> Vec<String> {
     let storage_key = azure_cfg.key.clone();
     let storage_container = azure_cfg.container.as_str();
     let storage_credential = StorageCredentials::access_key(storage_account, storage_key);
-    let container_r = ClientBuilder::new(storage_account, storage_credential)
-        .container_client(storage_container);
+    let container_r =
+        ClientBuilder::new(storage_account, storage_credential).container_client(storage_container);
     let listbldr = container_r.list_blobs();
     let mut liststream = listbldr.into_stream();
     let mut listing = Vec::new();
@@ -354,7 +359,6 @@ async fn azure_list_files(directory: String) -> Vec<String> {
                 BlobItem::BlobPrefix(blob_prefix) => blob_prefix.name,
             };
             listing.push(blob_name.clone());
-            
         }
         println!("Listing count: {}", listing.len());
     }
@@ -373,7 +377,11 @@ impl super::Driver for AzureDriver {
         });
         return filenameret;
     }
-    fn tag_file(&self, filename: String, user_tags: Vec<(String, String)>) -> Result<String, String> {
+    fn tag_file(
+        &self,
+        filename: String,
+        user_tags: Vec<(String, String)>,
+    ) -> Result<String, String> {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let ret = rt.block_on(azure_set_filename_tags(filename, user_tags));
         return ret;

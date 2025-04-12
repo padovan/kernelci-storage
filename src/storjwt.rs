@@ -1,6 +1,6 @@
 use crate::get_config_content;
 use hmac::{Hmac, Mac};
-use jwt::{Header, Token, VerifyWithKey, SignWithKey};
+use jwt::{Header, SignWithKey, Token, VerifyWithKey};
 use sha2::Sha256;
 use std::collections::BTreeMap;
 use toml::value::Table;
@@ -36,7 +36,7 @@ pub fn verify_jwt_token(token_str: &str) -> Result<BTreeMap<String, String>, jwt
 pub fn generate_jwt_secret() {
     // generate a random 32 bytes alphanumeric string
     use rand::{distributions::Alphanumeric, Rng};
-    
+
     let secret: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(32)

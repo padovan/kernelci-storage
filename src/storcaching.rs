@@ -1,7 +1,7 @@
-use tokio::time::Duration;
-use std::time::SystemTime;
-use std::fs;
 use fs2;
+use std::fs;
+use std::time::SystemTime;
+use tokio::time::Duration;
 
 struct Files {
     file: String,
@@ -59,7 +59,10 @@ fn delete_cache_file(file: String) {
     // Truncate from filename .content, and add .headers, delete both files
     let content_filename = file.clone();
     let headers_filename = file.replace(".content", ".headers");
-    println!("Deleting files: {} {}", &content_filename, &headers_filename);
+    println!(
+        "Deleting files: {} {}",
+        &content_filename, &headers_filename
+    );
     let res = fs::remove_file(&content_filename);
     match res {
         Ok(_) => {}
@@ -93,7 +96,7 @@ async fn clean_disk(cache_dir: String) {
 /// Cache housekeeping loop
 /// This function will check the disk space every and clean with some hysteresis
 pub async fn cache_loop(cache_dir: &str) {
-    let mut cleaning_on : bool = false;
+    let mut cleaning_on: bool = false;
     loop {
         let free_space = freediskspace_percent(cache_dir.to_string()).await;
         if free_space < 12 && !cleaning_on {
@@ -115,4 +118,4 @@ pub async fn cache_loop(cache_dir: &str) {
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
     }
-}        
+}

@@ -11,8 +11,8 @@
 */
 
 mod azure;
-mod storjwt;
 mod storcaching;
+mod storjwt;
 
 use axum::{
     body::Body,
@@ -29,9 +29,8 @@ use std::path;
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
-use tower::ServiceBuilder;
 use toml::Table;
-
+use tower::ServiceBuilder;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -55,19 +54,10 @@ struct Args {
     )]
     config_file: String,
 
-    #[clap(
-        short,
-        long,
-        default_value = "false",
-        help = "Generate JWT secret"
-    )]
+    #[clap(short, long, default_value = "false", help = "Generate JWT secret")]
     generate_jwt_secret: bool,
 
-    #[clap(
-        long,
-        default_value = "",
-        help = "Generate JWT token for email"
-    )]
+    #[clap(long, default_value = "", help = "Generate JWT token for email")]
     generate_jwt_token: String,
 }
 
@@ -81,7 +71,11 @@ struct ReceivedFile {
 trait Driver {
     fn write_file(&self, filename: String, data: Vec<u8>, cont_type: String) -> String;
     fn get_file(&self, filename: String) -> ReceivedFile;
-    fn tag_file(&self, filename: String, user_tags: Vec<(String, String)>) -> Result<String, String>;
+    fn tag_file(
+        &self,
+        filename: String,
+        user_tags: Vec<(String, String)>,
+    ) -> Result<String, String>;
     fn list_files(&self, directory: String) -> Vec<String>;
 }
 
@@ -146,7 +140,7 @@ async fn initial_setup() -> Option<RustlsConfig> {
         std::fs::create_dir(download_dir).unwrap();
     }
 
-    let cfg_file : PathBuf;
+    let cfg_file: PathBuf;
     // is ENV KCI_STORAGE_CONFIG set?
     if let Ok(cfg_file_env) = std::env::var("KCI_STORAGE_CONFIG") {
         cfg_file = PathBuf::from(&cfg_file_env);
@@ -155,7 +149,7 @@ async fn initial_setup() -> Option<RustlsConfig> {
         cfg_file = PathBuf::from(&args.config_file);
         println!("Using config file from args: {}", cfg_file.display());
     }
-    
+
     if !cfg_file.exists() {
         eprintln!("Config file {} does not exist", &args.config_file);
         std::process::exit(1);
@@ -176,8 +170,6 @@ async fn initial_setup() -> Option<RustlsConfig> {
             None
         }
     }
-
-    
 }
 
 #[tokio::main]
@@ -309,7 +301,10 @@ fn verify_upload_permissions(owner: &str, path: &str) -> Result<(), String> {
             }
         }
     }
-    Err(format!("User {} has no upload permissions for path {}", owner, path))
+    Err(format!(
+        "User {} has no upload permissions for path {}",
+        owner, path
+    ))
 }
 
 /*
@@ -352,7 +347,6 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
         Ok(_) => (),
         Err(e) => return (StatusCode::FORBIDDEN, e.to_string().into_bytes()),
     }
-
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
