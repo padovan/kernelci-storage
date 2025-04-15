@@ -35,3 +35,54 @@ field file0: the file to upload.
 
 Download a file from the server.
 
+### Authentication
+
+The server uses JWT token based authentication. The token is passed in the `Authorization` header as a Bearer token.
+JWT secret is configured in the `config.toml` file.
+
+```bash
+./kernelci-storage -generate_jwt_token user@email.com
+```
+This will generate a JWT token for the user.
+
+### Testing upload and download using curl
+
+```bash
+# Upload
+curl -X POST http://files.kernelci.org/upload \
+    -H "Authorization: Bearer <JWT_TOKEN>" \
+    -F "path=testfolder" \
+    -F "file0=@local_folder/local_file"
+
+# File will be uploaded to Azure Blob Storage as testfolder/local_folder/local_file
+
+# Download
+curl http://files.kernelci.org/testfolder/local_folder/local_file
+```
+
+## Principle of operation
+
+sequenceDiagram
+    participant User
+    participant Proxy Server
+    participant Local Cache
+    participant Azure Blob Storage
+
+    %% Upload Flow
+    User->>Proxy Server: Upload File (POST Request)
+    Proxy Server->>Azure Blob Storage: Store File in Cloud
+    Azure Blob Storage-->>Proxy Server: Confirmation
+    Proxy Server-->>User: Upload Successful
+
+    %% Download Flow
+    User->>Proxy Server: Request File (GET Request)
+    Proxy Server->>Local Cache: Check if File Exists
+    alt File Found in Cache
+        Local Cache-->>Proxy Server: Return Cached File
+        Proxy Server-->>User: Send File
+    else File Not in Cache
+        Proxy Server->>Azure Blob Storage: Fetch File from Cloud
+        Azure Blob Storage-->>Proxy Server: Send File Data
+        Proxy Server->>Local Cache: Save File Locally
+        Proxy Server-->>User: Send File
+    end
