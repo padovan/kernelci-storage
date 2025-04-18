@@ -62,6 +62,7 @@ curl http://files.kernelci.org/testfolder/local_folder/local_file
 
 ## Principle of operation
 
+```mermaid
 sequenceDiagram
     participant User
     participant Proxy Server
@@ -86,3 +87,4 @@ sequenceDiagram
         Proxy Server->>Local Cache: Save File Locally
         Proxy Server-->>User: Send File
     end
+```
