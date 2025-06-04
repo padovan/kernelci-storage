@@ -16,7 +16,7 @@ mod storjwt;
 
 use axum::{
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path},
+    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, State},
     http::{header, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -31,6 +31,8 @@ use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
 use toml::Table;
 use tower::ServiceBuilder;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{RwLock, Semaphore};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -59,6 +61,25 @@ struct Args {
 
     #[clap(long, default_value = "", help = "Generate JWT token for email")]
     generate_jwt_token: String,
+}
+
+
+type FileSemaphores = Arc<RwLock<HashMap<String, Arc<Semaphore>>>>;
+
+#[derive(Clone)]
+struct AppState {
+    file_locks: FileSemaphores,
+}
+
+
+async fn get_or_create_semaphore(
+    locks: &FileSemaphores,
+    filename: &str,
+) -> Arc<Semaphore> {
+    let mut map = locks.write().await;
+    map.entry(filename.to_string())
+        .or_insert_with(|| Arc::new(Semaphore::new(1)))
+        .clone()
 }
 
 struct ReceivedFile {
@@ -177,7 +198,9 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let tlscfg = initial_setup().await;
     let port = 3000;
-
+    let state = AppState {
+        file_locks: Arc::new(RwLock::new(HashMap::new())),
+    };
     println!("Starting server, tls: {:?}", tlscfg);
 
     // Supported endpoints:
@@ -193,7 +216,8 @@ async fn main() {
         .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file))
         .route("/v1/list", get(ax_list_files))
-        .layer(ServiceBuilder::new().layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)));
+        .layer(ServiceBuilder::new().layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)))
+        .with_state(state);
 
     /*
             .layer(SecureClientIpSource::ConnectInfo.into_extension())
@@ -313,7 +337,7 @@ fn verify_upload_permissions(owner: &str, path: &str) -> Result<(), String> {
     This function will check if the Authorization header is present and if the token is correct
     If the token is correct, it will write the content of the file to the server
 */
-async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCode, Vec<u8>) {
+async fn ax_post_file(headers: HeaderMap, State(state): State<AppState>, mut multipart: Multipart) -> (StatusCode, Vec<u8>) {
     // call check_auth
     let message = verify_auth_hdr(&headers);
     let owner = match message {
@@ -337,6 +361,7 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
     let mut path: String = "".to_string();
     let mut file0: Vec<u8> = Vec::new();
     let mut file0_filename: String = "".to_string();
+    let full_path = format!("{}/{}", path, file0_filename);
 
     // verify upload permissions, some users have upload permissions only for certain prefix(path)
     // check config.toml for upload_prefixes
@@ -344,6 +369,16 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
         Ok(_) => (),
         Err(e) => return (StatusCode::FORBIDDEN, e.to_string().into_bytes()),
     }
+
+    let semaphore = get_or_create_semaphore(&state.file_locks, &full_path).await;
+    
+    // Try to acquire permit - fails immediately if upload in progress
+    let permit = match semaphore.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return (StatusCode::CONFLICT, "Upload already in progress".to_string().into_bytes());
+        }
+    };
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
@@ -388,7 +423,7 @@ async fn ax_post_file(headers: HeaderMap, mut multipart: Multipart) -> (StatusCo
         println!("Removing trailing /, workaround");
         path.pop();
     }
-    let full_path = format!("{}/{}", path, file0_filename);
+    
     let hdr_content_type = headers.get("Content-Type-Upstream");
     let content_type: String = match hdr_content_type {
         Some(content_type) => {
@@ -442,6 +477,7 @@ async fn ax_get_file(
     rxheaders: HeaderMap,
     method: Method,
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
     let timestamp = std::time::SystemTime::now();
     let human_time = chrono::DateTime::<chrono::Utc>::from(timestamp);
@@ -449,6 +485,21 @@ async fn ax_get_file(
     let user_agent_str = match user_agent {
         Some(user_agent) => user_agent.to_str().unwrap(),
         None => "",
+    };
+
+    let semaphore = get_or_create_semaphore(&state.file_locks, &filepath).await;
+    // Wait for permit with timeout
+    let _permit = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        semaphore.acquire(),
+    ).await {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(_)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Semaphore closed").into_response();
+        }
+        Err(_) => {
+            return (StatusCode::REQUEST_TIMEOUT, "Timeout waiting for upload").into_response();
+        }
     };
 
     let received_file = driver_get_file(filepath.clone());
