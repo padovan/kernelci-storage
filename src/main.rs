@@ -396,7 +396,7 @@ async fn ax_post_file(headers: HeaderMap, State(state): State<AppState>, mut mul
     let mut path: String = "".to_string();
     let mut file0: Vec<u8> = Vec::new();
     let mut file0_filename: String = "".to_string();
-    let full_path = format!("{}/{}", path, file0_filename);
+    
 
     // verify upload permissions, some users have upload permissions only for certain prefix(path)
     // check config.toml for upload_prefixes
@@ -405,15 +405,6 @@ async fn ax_post_file(headers: HeaderMap, State(state): State<AppState>, mut mul
         Err(e) => return (StatusCode::FORBIDDEN, e.to_string().into_bytes()),
     }
 
-    let semaphore = get_or_create_semaphore(&state.file_locks, &full_path).await;
-    
-    // Try to acquire permit - fails immediately if upload in progress
-    let permit = match semaphore.try_acquire() {
-        Ok(permit) => permit,
-        Err(_) => {
-            return (StatusCode::CONFLICT, "Upload already in progress".to_string().into_bytes());
-        }
-    };
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
@@ -459,7 +450,18 @@ async fn ax_post_file(headers: HeaderMap, State(state): State<AppState>, mut mul
         path.pop();
     }
     
+    let full_path = format!("{}/{}", path, file0_filename);
     let hdr_content_type = headers.get("Content-Type-Upstream");
+    let semaphore = get_or_create_semaphore(&state.file_locks, &full_path).await;
+    
+    // Try to acquire permit - fails immediately if upload in progress
+    let permit = match semaphore.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return (StatusCode::CONFLICT, "Upload already in progress".to_string().into_bytes());
+        }
+    };
+
     let content_type: String = match hdr_content_type {
         Some(content_type) => {
             println!("Content-Type: {:?}", content_type);
