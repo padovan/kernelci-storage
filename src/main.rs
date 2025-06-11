@@ -33,6 +33,7 @@ use toml::Table;
 use tower::ServiceBuilder;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{RwLock, Semaphore};
+use sysinfo::Disks;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -193,6 +194,34 @@ async fn initial_setup() -> Option<RustlsConfig> {
     }
 }
 
+async fn ax_metrics() -> (StatusCode, String) {
+    /*
+    Prometheus metrics:
+    storage_files_cached NNN
+    storage_free_space NNN
+    */
+    let mut metrics = String::new();
+    // prometehus header
+    metrics.push_str("# HELP storage_free_space Free space on the disk\n");
+    metrics.push_str("# TYPE storage_free_space gauge\n");
+    metrics.push_str("# HELP storage_total_space Total space on the disk\n");
+    metrics.push_str("# TYPE storage_total_space gauge\n");
+    let hostname = sysinfo::System::host_name().unwrap_or_else(|| "<unknown>".to_owned());
+
+    let disks = Disks::new_with_refreshed_list();
+    for disk in disks.list() {
+        // name, mount_point, total_space, available_space
+        let tag_diskname = disk.name().to_string_lossy();
+        let tag_mount_point = disk.mount_point().to_string_lossy();
+        let tag_total_space = disk.total_space();
+        let tag_available_space = disk.available_space();
+        
+        metrics.push_str(&format!("storage_free_space {{hostname=\"{}\", diskname=\"{}\", mount_point=\"{}\"}} {}\n", hostname, tag_diskname, tag_mount_point, tag_available_space));
+        metrics.push_str(&format!("storage_total_space {{hostname=\"{}\", diskname=\"{}\", mount_point=\"{}\"}} {}\n", hostname, tag_diskname, tag_mount_point, tag_total_space));
+    }
+    (StatusCode::OK, metrics)
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -216,6 +245,7 @@ async fn main() {
         .route("/upload", post(ax_post_file))
         .route("/*filepath", get(ax_get_file))
         .route("/v1/list", get(ax_list_files))
+        .route("/metrics", get(ax_metrics))
         .layer(ServiceBuilder::new().layer(DefaultBodyLimit::max(1024 * 1024 * 1024 * 4)))
         .with_state(state);
 
