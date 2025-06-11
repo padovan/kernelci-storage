@@ -206,18 +206,23 @@ async fn ax_metrics() -> (StatusCode, String) {
     metrics.push_str("# TYPE storage_free_space gauge\n");
     metrics.push_str("# HELP storage_total_space Total space on the disk\n");
     metrics.push_str("# TYPE storage_total_space gauge\n");
-    let hostname = sysinfo::System::host_name().unwrap_or_else(|| "<unknown>".to_owned());
+    let hostname = "kernelci-storage".to_string();
 
     let disks = Disks::new_with_refreshed_list();
     for disk in disks.list() {
+        // if mount_point is not / and not /workdir, skip it
+        // Docker :(
+        let mount_point = disk.mount_point().to_string_lossy();
+        if mount_point != "/" && mount_point != "/workdir" {
+            continue;
+        }
         // name, mount_point, total_space, available_space
         let tag_diskname = disk.name().to_string_lossy();
-        let tag_mount_point = disk.mount_point().to_string_lossy();
         let tag_total_space = disk.total_space();
         let tag_available_space = disk.available_space();
         
-        metrics.push_str(&format!("storage_free_space {{hostname=\"{}\", diskname=\"{}\", mount_point=\"{}\"}} {}\n", hostname, tag_diskname, tag_mount_point, tag_available_space));
-        metrics.push_str(&format!("storage_total_space {{hostname=\"{}\", diskname=\"{}\", mount_point=\"{}\"}} {}\n", hostname, tag_diskname, tag_mount_point, tag_total_space));
+        metrics.push_str(&format!("storage_free_space {{hostname=\"{}\", diskname=\"{}\", mount_point=\"{}\"}} {}\n", hostname, tag_diskname, mount_point, tag_available_space));
+        metrics.push_str(&format!("storage_total_space {{hostname=\"{}\", diskname=\"{}\", mount_point=\"{}\"}} {}\n", hostname, tag_diskname, mount_point, tag_total_space));
     }
     (StatusCode::OK, metrics)
 }
