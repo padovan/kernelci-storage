@@ -89,7 +89,14 @@ async fn clean_disk(cache_dir: String) {
             oldest_file = file;
         }
     }
-    delete_cache_file(oldest_file.file);
+    // if file is less than 60 min old, do not delete it
+    if oldest_file.last_update.elapsed().unwrap() > Duration::from_secs(60 * 60) {
+        delete_cache_file(oldest_file.file);
+    } else {
+        println!("File is less than 60 min old, skipping: {}, sleeping 60 seconds", oldest_file.file);
+        // sleep 60 seconds
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    }
 }
 
 /// Cache housekeeping loop

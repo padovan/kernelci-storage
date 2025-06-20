@@ -45,6 +45,19 @@ JWT secret is configured in the `config.toml` file.
 ```
 This will generate a JWT token for the user.
 
+#### Testing Token Validity
+
+You can verify if a token is valid using the `/v1/checkauth` endpoint:
+
+```bash
+curl -X GET http://localhost:3000/v1/checkauth \
+    -H "Authorization: Bearer <JWT_TOKEN>"
+```
+
+**Responses:**
+- `200 OK` with body `Authorized: user@email.com` - Token is valid
+- `401 Unauthorized` with body `Unauthorized` - Token is invalid or missing
+
 ### Testing upload and download using curl
 
 ```bash
